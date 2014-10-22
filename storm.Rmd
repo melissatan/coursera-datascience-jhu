@@ -1,0 +1,75 @@
+---
+title: "Repdata-007 peer assessment 2 - NOAA storm data"
+output: 
+  html_document:
+    keep_md: true
+---
+# Title: Which storm types cause the most health and economic damage?
+Done by: Melissa Tan, October 2014
+
+## 1. Synopsis
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. We explore the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database, which tracks characteristics of major storms and weather events in the United States.
+
+We find that:
+1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+2. Across the United States, which types of events have the greatest economic consequences?
+#### Objective
+
+We aim to answer these questions:
+
+1. Across the United States, which types of severe weather events are most harmful with respect to population health?
+
+2. Across the United States, which types of severe weather events have the greatest economic consequences?
+
+#### Background
+
+#### About the data
+We analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage. The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+
+## 2. Data Processing
+
+#### Downloading the data
+The data for this assignment is at [this link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). It comes in the form of a CSV file in .bz2 format. Download and unzip.
+
+```{r}
+if(!file.exists("./StormData.csv.bz2")) {
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","./StormData.csv.bz2")
+}
+unzip()
+```
+
+## 3. Results
+
+
+
+## 4. Supplementary notes
+
+Software environment in which the analysis was conducted:
+
+* R version 3.1.1
+* RStudio version 0.98.1073
+* OS: Windows 7, 32-bit
+* Packages loaded (non-base packages):
+    * dplyr_0.2
+    * ggplot2_1.0.0 
+    * ggthemes_1.7.0 
+    * lubridate_1.3.3
+* The above packages depended on:
+    * assertthat_0.1   
+    * colorspace_1.2-4
+    * digest_0.6.4     
+    * grid_3.1.1      
+    * gtable_0.1.2     
+    * MASS_7.3-33     
+    * memoise_0.2.1    
+    * munsell_0.4.2   
+    * parallel_3.1.1   
+    * plyr_1.8.1      
+    * proto_0.3-10    
+    * Rcpp_0.11.2     
+    * reshape2_1.4    
+    * scales_0.2.4    
+    * stringr_0.6.2   
+    * tools_3.1.1  
