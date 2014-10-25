@@ -83,7 +83,7 @@ These issues include,
 #### Cleaning up $EVTYPE factor levels
 
 Convert everything to uppercase, and trim off whitespace. N.B. I tried setting `strip.white=TRUE` in `read.csv()` but the whitespaces in the factor levels remained, so we will need to do it manually.
-```{r}
+```{r cache=TRUE}
 # function to trim off leading and trailing whitespace in string x
 trim <- function (x) {
     gsub("^\\s+|\\s+$", "", x)
@@ -97,41 +97,49 @@ levels(df$EVTYPE) <- toupper(levels(df$EVTYPE)) #reduces to 890 levels
 
 From the NOAA's official documentation ([pdf, see item 7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) there are 48 main groups of event types. 
 
-We try to put each event type into one of the 48 buckets, and store that grouping in a new column called `$EVGROUP`. For those that don't fit any bucket, we leave them out.
+We try to put each event type into one of the 48 buckets, and keep track of that grouping in a new column called `$EVGROUP`. For those events that don't fit any bucket, we will leave them as `NA`.
 ```{r}
-# create new col as character at first, for easier renaming
-df$EVGROUP <- as.character.factor(df$EVTYPE)
+# create new col, initialise with NA for clarity
+df$EventType <- rep(NA,nrow(df))
+```
 
-# lists of 48 event groups, in alphabetical order
+I visually went over the factor levels given in `levels(df$EVTYPE)`to come up with the following regex searches for `grep`.
+
+These searches are intended to place each event type in the appropriate group bucket. Most of my choices are based on keywords and are mostly self-explanatory. For others, I had to do some research, e.g. I found out that "downbursts" are a type of thunderstorm wind.
+
+Each of the 48 lists below corresponds to one of the 48 event groups that NOAA has identified. Each list contains match strings for the values in `$EVTYPE`, some with basic regex. They are in alphabetical order.
+
+```{r cache=TRUE}
 astrolowtide <- c("low tide","blow-out")
-avalanche <- c("avalanch?e","land","mud","slide")
+avalanche <- c("avalanch?e")
 
 blizzard <- c("blizzard","blowing snow")
 
 coastalflood <- c("coastal","beach","erosin", "erosion")
-coldwindchill <-c("cold","wind chill","cool","hypothermia","low temperature$","unseasona.+? co.+?","unusually cold")
+coldwindchill <-c("cold","wind chill","cool","hypothermia","low temperature$","unseasona.+? co.+?","unusually cold","low temp")
 
-debrisflow <- "debris flow"
-densefog <-c("fog$","^fog","dense smoke")
-drought <- c("drought","below normal prec","fires?","driest","dry")
-dustdevil <- "dust devil"
+debrisflow <- c("debris flow","land","mud","slide")
+densefog <-c("fog$","^fog")
+densesmoke <- c("smoke")
+drought <- c("drought","below normal prec.+?","driest","dry","low rainfall")
+dustdevil <- c("dust devil","dust devel")
 duststorm <- c("dust storm","blowing dust","duststorm","saharan dust")
 
-extraheat <- c("excessive heat", "abnormal warmth","extreme heat","high temperature record")
-extracoldwindchill <- c("extreme cold", "extreme wind chill","bitter wind chill","excessive cold","extended cold","record .*?co.+?","extreme windchill","low temperature record","prolong cold","severe cold")
+extraheat <- c("excessive heat", "abnormal warmth","extreme heat","high temperature record","record high", "record heat")
+extracoldwindchill <- c("extreme cold", "extreme wind chill","bitter wind chill","excessive cold","extended cold","record .*?co.+?","extreme windchill","low temperature record","prolong cold","severe cold", "record low")
 
-flashflood <- c("flash flood","excessive rain","excessive wetness","wet")
-flood <- c("abnormally wet", "^flood","dam break","dam failure","drowning","flood$","flooding$")
+flashflood <- c("flash")
+flood <- c("abnormally wet", "^flood","dam break","dam failure","drowning","flood$","flooding?","rapidly rising water", "fld", "floyd")
 freezingfog <- "freezing fog"
-frostfreeze <- c("frost","freeze","^freezing (?!fog)")
-funnelcloud <- "funnel"
+frostfreeze <- c("frost","freeze","^freezing [rds]")
+funnelcloud <- c("funnel","wall")
 
 hail <- "hail"
 heat <- c("^heat","hot","hyperthermia","warm.*?")
-heavyrain <- c("heavy rain","heavy prec.+?","heavy shower.+?","hvy rain","torrential")
-heavy snow <- "heavy .*?snow"
-highsurf <- c("high surf","astronomical high tide","heavy surf","heavy swells","high .*?swells", "high seas", "high tides","high water")
-highwind <- c("high .*?winds?","wnd","^winds$")
+heavyrain <- c("rain","heavy prec.+?","heavy shower.+?","torrential","rainstorm","record rainfall","excessive wetness","wet", "excessive precipitation","record precipitation")
+heavysnow <- c("heavy .*?snow")
+highsurf <- c("surf","astronomical high tide","heavy swells","high .*?swells", "high seas", "high tides","high water")
+highwind <- c("high .*?winds?") #worse than strongwind
 hurricanetyphoon <- c("hurricane","typhoon")
 
 icestorm <- c("ice storm","glaze")
@@ -141,40 +149,147 @@ lakesnow <- c("lake-?effect","heavy lake snow")
 lightning <- c("lightn?ing","ligntning")
 
 marinehail <- "marine hail"
-marinehighwind <- "marine high wind"
+marinehighwind <- c("marine high wind", "high waves","heavy seas?","wind and wave")
 marinestrongwind <- c("marine strong wind","rough seas","rough surf")
 marinestormwind <- c("marine thunderstorm wind","marine tstm wind")
 
 ripcurrent <- "rip currents?"
 
 seiche <- "seiche"
-sleet <- "sleet"
+sleet <- c("sleet","light freezing rain")
 stormtide <- c("storm tide","gusty","storm surge")
-strongwind <- c("^wind$","strong wind","gradient","non tstm wind","storm force winds")
+strongwind <- c("^wind","wnd","strong wind","gradient","non tstm wind","storm force winds","wind damage")
 
-thunderstormwind <- c("tstm", "thun?dee?re?storm .*?wind?s?s?","downburst","microburst","mir?coburst","heatburst","severe thunderstorms","thunderstormw.*?")
+thunderstormwind <- c("^tstm", "th?und?", "thun?dee?r?e?s?torms? .*?wind?s?s?", "downburst","microburst","mir?coburst","heatburst","severe thunderstorms?","thunderstormw.*?", "wind storm")
 tornado <- c("tornado","gustnado","rotating wall cloud","torndao","whirlwind")
 tropicaldepression <- "tropical depression"
 tropicalstorm <- "tropical storm"
 tsunami <- "tsunami"
 
-volcanicash <- "volcanic ash.*?"
+volcanicash <- "volcanic"
 
 waterspout <- "spout"
-wildfire <- "wildfire"
+wildfire <- "fire"
 winterstorm <- c("winter storm","thundersnow")
 winterweather <- c("^wintery?","snow","ice","icy",".^*?snow.*?$","wintry")
-
-# function to grep #EVTYPE for events and put into group
-groupEvent <- function(eventlist, groupname) {
-    match <- grep(paste(eventlist,collapse="|"), df$EVTYPE, ignore.case=TRUE)
-    df$EVGROUP[match] <- groupname
-}
-
-# call function
-groupEvent
 ```
 
+Now, we want to carry out 48 `grep`s -- one for each event group -- on `df$EVTYPE`, with `ignore.case=TRUE` for convenience. 
+
+I make this a bit easier by writing a helper function called `groupEvent()`, which takes as arguments a list (one of the 48 lists above) and  the corresponding event group name. It will fill in the group name as the value of the appropriate row in our newly created column, `df$EVGROUP`.
+
+```{r cache=TRUE}
+# function to grep through $EVTYPE for given match string, then fill in $EVGROUP appropriately
+groupEv <- function(eventlist, groupname) {
+    hits <- grep(paste(eventlist,collapse="|"), df$EVTYPE, ignore.case=TRUE)
+    df$EventType[hits] <<- groupname
+}
+```
+
+One by one, we call the `groupEvent()` function above for all 48 lists identified.
+
+```{r cache=TRUE}
+
+# Some greps are broader than others, so handle them first
+groupEv(heat, "Heat")
+groupEv(coldwindchill,"Cold/Wind Chill")
+groupEv(winterweather, "Winter Weather")
+groupEv(flood,"Flood")
+groupEv(hail, "Hail")
+groupEv(frostfreeze, "Frost/Freeze")
+groupEv(strongwind, "Strong Wind")
+groupEv(thunderstormwind, "Thunderstorm Wind")
+groupEv(heavyrain, "Heavy Rain")
+
+# Narrower greps follow
+groupEv(astrolowtide, "Astronomical Low Tide")
+groupEv(avalanche,"Avalanche")
+groupEv(blizzard,"Blizzard")
+groupEv(coastalflood,"Coastal Flood")
+groupEv(debrisflow,"Debris Flow")
+groupEv(densefog, "Dense Fog")
+groupEv(densesmoke, "Dense Smoke")
+groupEv(drought, "Drought")
+groupEv(dustdevil, "Dust Devil")
+groupEv(duststorm, "Dust Storm")
+groupEv(extraheat, "Excessive Heat")
+groupEv(extracoldwindchill, "Extreme Cold/Wind Chill")
+groupEv(flashflood, "Flash Flood")
+groupEv(freezingfog, "Freezing Fog")
+groupEv(funnelcloud, "Funnel Cloud")
+groupEv(heavysnow, "Heavy Snow") 
+groupEv(highsurf, "High Surf")
+groupEv(highwind, "High Wind")
+groupEv(hurricanetyphoon, "Hurricane/Typhoon")
+groupEv(icestorm, "Ice Storm")
+groupEv(lakeflood, "Lakeshore Flood")
+groupEv(lakesnow, "Lake-effect Snow")
+groupEv(lightning, "Lightning")
+groupEv(marinehail, "Marine Hail")
+groupEv(marinehighwind, "Marine High Wind")
+groupEv(marinestrongwind, "Marine Strong Wind")
+groupEv(marinestormwind, "Marine Thunderstorm Wind")
+groupEv(ripcurrent, "Rip Current")
+groupEv(seiche, "Seiche")
+groupEv(sleet, "Sleet")
+groupEv(stormtide, "Storm Tide")
+groupEv(tornado, "Tornado")
+groupEv(tropicaldepression, "Tropical Depression")
+groupEv(tropicalstorm, "Tropical Storm")
+groupEv(tsunami, "Tsunami")
+groupEv(volcanicash, "Volcanic Ash")
+groupEv(waterspout, "Waterspout")
+groupEv(wildfire, "Wildfire")
+groupEv(winterstorm, "Winter Storm")
+```
+
+Now that each event type has been put into one of 48 buckets, we convert the character column into a factor column.
+```{r}
+df$EventType <- as.factor(df@EventType)
+```
+
+
+#### Computing property and crop damage estimates
+
+Economic consequences can be measured by property damage and crop damage, which are in the dataset. 
+
+We know from the official documentation ([pdf, see item 2.7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) that the total property damage is the `$PROPDMG` value times the multiplier specified in`$PROPDMGEXP`, and similarly for crop damage. We are told that "K" refers to thousands, "M" millions and "B" billions.
+
+However, we need to clean up `$PROPDMGEXP` and `$CROPDMGEXP` before we can use them. As you can see, the values are all over the place and will require us to make certain assumptions to proceed.
+```{r}
+levels(df$PROPDMGEXP)
+levels(df$CROPDMGEXP)
+```
+For the purposes of this analysis, I shall assume that numerical values in the `DMGEXP` columns refer to exponent of 10, e.g. "2" would denote "10^2". I assume "h" refers to hundreds. For convenience, I assume that null, "+", "?", and "-" indicate "0". Following these assumptions, we rename the factor levels.
+
+```{r}
+zeroes <- c("","-","?","+")
+hundred <- c("h","H")
+thousand <- c("k","K")
+million <- c("m","M")
+billion <- c("b","B")
+
+# property
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% zeroes] <- "0"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% hundred] <- "2"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% thousand] <- "3"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% million] <- "6"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% billion] <- "9"
+
+# crop
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% zeroes] <- "0"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% hundred] <- "2"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% thousand] <- "3"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% million] <- "6"
+levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% billion] <- "9"
+```
+
+
+
+```{r}
+library(dplyr)
+
+```
 --------
 ## 3. Results
 
