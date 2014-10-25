@@ -30,14 +30,14 @@ We analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) sto
 Download the data from [this link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). It comes in the form of a CSV file zipped as a `.bz2` file. As it turns out, `read.csv()` is just a wrapper of `read.table()` which can directly read data saved in `.bz2` format. (Alternatively, if we wanted to, we could unzip the CSV with `bzfile()` then read it in.) We read in the CSV directly into dataframe `df`. 
 
 ```{r cache=TRUE}
-# save zip in parent directory for convenience
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+# save file in parent directory for convenience
 fname <- "../StormData.csv.bz2"
 if(!file.exists(fname)) {
     download.file(url, fname)
 }
-
-header <- read.csv(fname, header=T, nrows=1)
+# initially read in only top part, to get sense of data
+header <- read.csv(fname, nrows=1)
 names(header)
 ```
 There are _37_ columns. Since this is a big file, we only read in specific columns:
@@ -45,11 +45,13 @@ There are _37_ columns. Since this is a big file, we only read in specific colum
 * col 23-24: `$FATALITIES`, `$INJURIES`
 * col 25-28: `$PROPDMG`, `$PROPDMGEXP`, `$CROPDMG`, `$CROPDMGEXP`
 ```{r cache=TRUE}
+# identify the cols we want, with NA. for the rest, we put NULL
 myCols <- c(rep("NULL",7),
             NA, #col 8
             rep("NULL",14),
             rep(NA, 6), #cols 23-28
             rep("NULL",9))
+# read in only desired cols
 df <- read.csv(fname, colClasses = myCols)
 ```
 --------
@@ -60,9 +62,9 @@ Let's take a look at what the data set contains.
 ```{r}
 str(df)
 ```
-* The type of storm is represented in the column `$EVTYPE`, which we note has initially _985_ levels. 
+* The type of storm is represented in the column `$EVTYPE`, which we note has initially _985_ factor levels. 
 * For damage to population health, we can look at the `$FATALITIES` and `$INJURIES` columns.
-* For economic damage, we can look at `$PROPDMG`, `$CROPDMG`.
+* For economic damage, we can look at `$PROPDMG` together with `$PROPDMGEXP`, as well as `$CROPDMG` together with `$CROPDMGEXP`.
 
 We can quickly see that the `$EVTYPE` column has a few problems.
 ```{r}
@@ -71,19 +73,106 @@ tail(levels(df$EVTYPE))
 ```
 These issues include,
 * Content:
-    * Not all the factor levels are actually weather events
+    * Not all the factor levels are actually weather events.
 * Names:
-    * Some have leading or trailing whitespaces
-    * Some contain typos
-    * Some names are slightly different but refer to the same thing.
+    * Some have leading or trailing whitespaces;
+    * Not all are in uppercase;
+    * Different names for the same thing (see [timeline](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype));
+    * Some contain typos.
 
+#### Cleaning up $EVTYPE factor levels
 
-#### Cleaning up
-
-Clean up the `$EVTYPE` factor levels.
+Convert everything to uppercase, and trim off whitespace. N.B. I tried setting `strip.white=TRUE` in `read.csv()` but the whitespaces in the factor levels remained, so we will need to do it manually.
 ```{r}
-levels(df$EVTYPE) <- 
+# function to trim off leading and trailing whitespace in string x
+trim <- function (x) {
+    gsub("^\\s+|\\s+$", "", x)
+}
+# trim each of the 985 factor levels
+levels(df$EVTYPE) <- trim(levels(df$EVTYPE)) #reduces to 977 levels
 
+# convert each level to uppercase
+levels(df$EVTYPE) <- toupper(levels(df$EVTYPE)) #reduces to 890 levels
+```
+
+From the NOAA's official documentation ([pdf, see item 7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) there are 48 main groups of event types. 
+
+We try to put each event type into one of the 48 buckets, and store that grouping in a new column called `$EVGROUP`. For those that don't fit any bucket, we leave them out.
+```{r}
+# create new col as character at first, for easier renaming
+df$EVGROUP <- as.character.factor(df$EVTYPE)
+
+# lists of 48 event groups, in alphabetical order
+astrolowtide <- c("low tide","blow-out")
+avalanche <- c("avalanch?e","land","mud","slide")
+
+blizzard <- c("blizzard","blowing snow")
+
+coastalflood <- c("coastal","beach","erosin", "erosion")
+coldwindchill <-c("cold","wind chill","cool","hypothermia","low temperature$","unseasona.+? co.+?","unusually cold")
+
+debrisflow <- "debris flow"
+densefog <-c("fog$","^fog","dense smoke")
+drought <- c("drought","below normal prec","fires?","driest","dry")
+dustdevil <- "dust devil"
+duststorm <- c("dust storm","blowing dust","duststorm","saharan dust")
+
+extraheat <- c("excessive heat", "abnormal warmth","extreme heat","high temperature record")
+extracoldwindchill <- c("extreme cold", "extreme wind chill","bitter wind chill","excessive cold","extended cold","record .*?co.+?","extreme windchill","low temperature record","prolong cold","severe cold")
+
+flashflood <- c("flash flood","excessive rain","excessive wetness","wet")
+flood <- c("abnormally wet", "^flood","dam break","dam failure","drowning","flood$","flooding$")
+freezingfog <- "freezing fog"
+frostfreeze <- c("frost","freeze","^freezing (?!fog)")
+funnelcloud <- "funnel"
+
+hail <- "hail"
+heat <- c("^heat","hot","hyperthermia","warm.*?")
+heavyrain <- c("heavy rain","heavy prec.+?","heavy shower.+?","hvy rain","torrential")
+heavy snow <- "heavy .*?snow"
+highsurf <- c("high surf","astronomical high tide","heavy surf","heavy swells","high .*?swells", "high seas", "high tides","high water")
+highwind <- c("high .*?winds?","wnd","^winds$")
+hurricanetyphoon <- c("hurricane","typhoon")
+
+icestorm <- c("ice storm","glaze")
+
+lakeflood <- c("lakeshore flood", "lake flood")
+lakesnow <- c("lake-?effect","heavy lake snow")
+lightning <- c("lightn?ing","ligntning")
+
+marinehail <- "marine hail"
+marinehighwind <- "marine high wind"
+marinestrongwind <- c("marine strong wind","rough seas","rough surf")
+marinestormwind <- c("marine thunderstorm wind","marine tstm wind")
+
+ripcurrent <- "rip currents?"
+
+seiche <- "seiche"
+sleet <- "sleet"
+stormtide <- c("storm tide","gusty","storm surge")
+strongwind <- c("^wind$","strong wind","gradient","non tstm wind","storm force winds")
+
+thunderstormwind <- c("tstm", "thun?dee?re?storm .*?wind?s?s?","downburst","microburst","mir?coburst","heatburst","severe thunderstorms","thunderstormw.*?")
+tornado <- c("tornado","gustnado","rotating wall cloud","torndao","whirlwind")
+tropicaldepression <- "tropical depression"
+tropicalstorm <- "tropical storm"
+tsunami <- "tsunami"
+
+volcanicash <- "volcanic ash.*?"
+
+waterspout <- "spout"
+wildfire <- "wildfire"
+winterstorm <- c("winter storm","thundersnow")
+winterweather <- c("^wintery?","snow","ice","icy",".^*?snow.*?$","wintry")
+
+# function to grep #EVTYPE for events and put into group
+groupEvent <- function(eventlist, groupname) {
+    match <- grep(paste(eventlist,collapse="|"), df$EVTYPE, ignore.case=TRUE)
+    df$EVGROUP[match] <- groupname
+}
+
+# call function
+groupEvent
 ```
 
 --------
