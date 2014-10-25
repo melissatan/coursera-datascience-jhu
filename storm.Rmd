@@ -51,20 +51,29 @@ myCols <- c(rep("NULL",7),
             rep("NULL",14),
             rep(NA, 6), #cols 23-28
             rep("NULL",9))
-# read in only desired cols
-df <- read.csv(fname, colClasses = myCols)
+# read in only desired cols. this should take about 4 min or so.
+df <- read.csv(fname, colClasses = myCols, stringsAsFactors=FALSE)
 ```
 --------
 ## 2. Data Processing
 
+#### Libraries required for analysis
+```{r results="hide", message=FALSE}
+# Set message=FALSE to suppress the package loading messages.
+require(dplyr)
+require(ggplot2)
+require(ggthemes)
+```
+
 #### Preliminary inspection
-Let's take a look at what the data set contains.
+Let's take a look at what the data set contains. Change the column `$EVTYPE`, representing weather event type, to Factor.
 ```{r}
 str(df)
+df$EVTYPE <- as.factor(df$EVTYPE)
 ```
 * The type of storm is represented in the column `$EVTYPE`, which we note has initially _985_ factor levels. 
 * For damage to population health, we can look at the `$FATALITIES` and `$INJURIES` columns.
-* For economic damage, we can look at `$PROPDMG` together with `$PROPDMGEXP`, as well as `$CROPDMG` together with `$CROPDMGEXP`.
+* For economic damage, we can look at `$PROPDMG` combined with `$PROPDMGEXP`, as well as `$CROPDMG` combined with `$CROPDMGEXP`.
 
 We can quickly see that the `$EVTYPE` column has a few problems.
 ```{r}
@@ -97,7 +106,7 @@ levels(df$EVTYPE) <- toupper(levels(df$EVTYPE)) #reduces to 890 levels
 
 From the NOAA's official documentation ([pdf, see item 7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) there are 48 main groups of event types. 
 
-We try to put each event type into one of the 48 buckets, and keep track of that grouping in a new column called `$EVGROUP`. For those events that don't fit any bucket, we will leave them as `NA`.
+We try to put each event type into one of the 48 buckets, and keep track of that grouping in a new column, `$EventType`. For those events that don't fit any bucket, we will leave the value as `NA`.
 ```{r}
 # create new col, initialise with NA for clarity
 df$EventType <- rep(NA,nrow(df))
@@ -176,7 +185,7 @@ winterweather <- c("^wintery?","snow","ice","icy",".^*?snow.*?$","wintry")
 
 Now, we want to carry out 48 `grep`s -- one for each event group -- on `df$EVTYPE`, with `ignore.case=TRUE` for convenience. 
 
-I make this a bit easier by writing a helper function called `groupEvent()`, which takes as arguments a list (one of the 48 lists above) and  the corresponding event group name. It will fill in the group name as the value of the appropriate row in our newly created column, `df$EVGROUP`.
+I make this a bit easier by writing a helper function called `groupEv()`, which takes as arguments a list (one of the 48 lists above) and the corresponding event group name. It will fill in the group name to the appropriate rows in the new column.
 
 ```{r cache=TRUE}
 # function to grep through $EVTYPE for given match string, then fill in $EVGROUP appropriately
@@ -186,7 +195,7 @@ groupEv <- function(eventlist, groupname) {
 }
 ```
 
-One by one, we call the `groupEvent()` function above for all 48 lists identified.
+One by one, we call the `groupEv()` function defined above, for each of the 48 groups identified.
 
 ```{r cache=TRUE}
 
@@ -243,9 +252,16 @@ groupEv(wildfire, "Wildfire")
 groupEv(winterstorm, "Winter Storm")
 ```
 
-Now that each event type has been put into one of 48 buckets, we convert the character column into a factor column.
+We can check how many event types we managed to categorize.
 ```{r}
-df$EventType <- as.factor(df@EventType)
+unplaced <- subset(df, is.na(df$EventType))
+# Compute percentage of events we did not manage to categorize:
+nrow(unplaced)/nrow(df)
+```
+
+Now that most of the event types have been put into one of 48 buckets, we convert the character column into a factor column.
+```{r}
+df$EventType <- as.factor(df$EventType)
 ```
 
 
@@ -257,10 +273,10 @@ We know from the official documentation ([pdf, see item 2.7](http://www.ncdc.noa
 
 However, we need to clean up `$PROPDMGEXP` and `$CROPDMGEXP` before we can use them. As you can see, the values are all over the place and will require us to make certain assumptions to proceed.
 ```{r}
-levels(df$PROPDMGEXP)
-levels(df$CROPDMGEXP)
+str(df$PROPDMGEXP)
+str(df$CROPDMGEXP)
 ```
-For the purposes of this analysis, I shall assume that numerical values in the `DMGEXP` columns refer to exponent of 10, e.g. "2" would denote "10^2". I assume "h" refers to hundreds. For convenience, I assume that null, "+", "?", and "-" indicate "0". Following these assumptions, we rename the factor levels.
+For the purposes of this analysis, I shall assume that numerical values in the `DMGEXP` columns refer to exponents of 10, e.g. "2" would denote "10^2". I assume "h" refers to hundreds. For convenience, I assume that null, "+", "?", and "-" indicate "0". Following these assumptions, we rename the factor levels.
 
 ```{r}
 zeroes <- c("","-","?","+")
@@ -269,26 +285,46 @@ thousand <- c("k","K")
 million <- c("m","M")
 billion <- c("b","B")
 
-# property
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% zeroes] <- "0"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% hundred] <- "2"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% thousand] <- "3"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% million] <- "6"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% billion] <- "9"
+# helper function to translate to number
+translate <- function(abbrev, num) {
+    df$PROPDMGEXP[df$PROPDMGEXP %in% abbrev] <<- num
+    df$CROPDMGEXP[df$CROPDMGEXP %in% abbrev] <<- num
+}
 
-# crop
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% zeroes] <- "0"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% hundred] <- "2"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% thousand] <- "3"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% million] <- "6"
-levels(df$PROPDMGEXP)[levels(df$PROPDMGEXP) %in% billion] <- "9"
+translate(zeroes, 0)
+translate(hundred, 2)
+translate(thousand, 3)
+translate(million, 6)
+translate(billion, 9)
+
+```
+
+After renaming the factor levels, we can start to compute the total damage estimates to property and crops. For this we use `mutate()` from `library(dplyr)`.
+
+```{r cache=TRUE}
+# convert $PROPDMGEXP to numeric 
+df$PROPDMGEXP <- as.numeric(df$PROPDMGEXP)
+df$CROPDMGEXP <- as.numeric(df$CROPDMGEXP)
+
+# add new cols where we compute total damage
+df <- mutate(df, PropertyDamage = PROPDMG*10^PROPDMGEXP,
+                 CropDamage = CROPDMG*10^CROPDMGEXP)
 ```
 
 
+We can further `summarize()` the data, such that fatalities, injuries, property damage and crop damage are all grouped by event type. 
 
 ```{r}
-library(dplyr)
+plotdf <- df %>% group_by(EventType) %>% 
+            summarize(totalDeaths = sum(FATALITIES),
+                      totalInjuries = sum(INJURIES),
+                      totalPropertyDamage = sum(PropertyDamage),
+                      totalCropDamage = sum(CropDamage))
+```
 
+We can now get rid of the columns that we do not need anymore, using `select()` from `library(dplyr)`.
+```{r}
+plotdf <- select(plotdf, EventType, totalDeaths, totalInjuries, totalPropertyDamage, totalCropDamage)
 ```
 --------
 ## 3. Results
