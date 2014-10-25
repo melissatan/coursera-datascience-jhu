@@ -8,12 +8,9 @@ output:
 Done by: Melissa Tan, October 2014
 
 ## 1. Synopsis
-Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. We explore the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database, which tracks characteristics of major storms and weather events in the United States.
 
-We find that:
-1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. In this study, we explore the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database, which tracks characteristics of major storms and weather events in the United States. We find that xxxx
 
-2. Across the United States, which types of events have the greatest economic consequences?
 #### Objective
 
 We aim to answer these questions:
@@ -23,27 +20,77 @@ We aim to answer these questions:
 2. Across the United States, which types of severe weather events have the greatest economic consequences?
 
 #### Background
+We analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
 
 #### About the data
-We analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage. The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
-
-
-## 2. Data Processing
+ The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
 
 #### Downloading the data
-The data for this assignment is at [this link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). It comes in the form of a CSV file in .bz2 format. Download and unzip.
 
-```{r}
-if(!file.exists("./StormData.csv.bz2")) {
-    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","./StormData.csv.bz2")
+Download the data from [this link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). It comes in the form of a CSV file zipped as a `.bz2` file. As it turns out, `read.csv()` is just a wrapper of `read.table()` which can directly read data saved in `.bz2` format. (Alternatively, if we wanted to, we could unzip the CSV with `bzfile()` then read it in.) We read in the CSV directly into dataframe `df`. 
+
+```{r cache=TRUE}
+# save zip in parent directory for convenience
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+fname <- "../StormData.csv.bz2"
+if(!file.exists(fname)) {
+    download.file(url, fname)
 }
-unzip()
+
+header <- read.csv(fname, header=T, nrows=1)
+names(header)
+```
+There are _37_ columns. Since this is a big file, we only read in specific columns:
+* col 8: `$EVTYPE`
+* col 23-24: `$FATALITIES`, `$INJURIES`
+* col 25-28: `$PROPDMG`, `$PROPDMGEXP`, `$CROPDMG`, `$CROPDMGEXP`
+```{r cache=TRUE}
+myCols <- c(rep("NULL",7),
+            NA, #col 8
+            rep("NULL",14),
+            rep(NA, 6), #cols 23-28
+            rep("NULL",9))
+df <- read.csv(fname, colClasses = myCols)
+```
+--------
+## 2. Data Processing
+
+#### Preliminary inspection
+Let's take a look at what the data set contains.
+```{r}
+str(df)
+```
+* The type of storm is represented in the column `$EVTYPE`, which we note has initially _985_ levels. 
+* For damage to population health, we can look at the `$FATALITIES` and `$INJURIES` columns.
+* For economic damage, we can look at `$PROPDMG`, `$CROPDMG`.
+
+We can quickly see that the `$EVTYPE` column has a few problems.
+```{r}
+head(levels(df$EVTYPE))
+tail(levels(df$EVTYPE))
+```
+These issues include,
+* Content:
+    * Not all the factor levels are actually weather events
+* Names:
+    * Some have leading or trailing whitespaces
+    * Some contain typos
+    * Some names are slightly different but refer to the same thing.
+
+
+#### Cleaning up
+
+Clean up the `$EVTYPE` factor levels.
+```{r}
+levels(df$EVTYPE) <- 
+
 ```
 
+--------
 ## 3. Results
 
 
-
+--------
 ## 4. Supplementary notes
 
 Software environment in which the analysis was conducted:
