@@ -359,6 +359,7 @@ g2 + geom_bar(stat = "identity")
 ```
 _Fig 2. Total property and crop damage, in monetary estimates, per type of weather event_
 
+We can also take a look to see whether health consequences are correlated with economic damage.
 
 --------
 ## 4. Supplementary notes
