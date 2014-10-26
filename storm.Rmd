@@ -61,6 +61,7 @@ df <- read.csv(fname, colClasses = myCols, stringsAsFactors=FALSE)
 ```{r results="hide", message=FALSE}
 # Set message=FALSE to suppress the package loading messages.
 require(dplyr)
+require(reshape2)
 require(ggplot2)
 require(ggthemes)
 ```
@@ -296,7 +297,6 @@ translate(hundred, 2)
 translate(thousand, 3)
 translate(million, 6)
 translate(billion, 9)
-
 ```
 
 After renaming the factor levels, we can start to compute the total damage estimates to property and crops. For this we use `mutate()` from `library(dplyr)`.
@@ -325,9 +325,39 @@ plotdf <- df %>% group_by(EventType) %>%
 We can now get rid of the columns that we do not need anymore, using `select()` from `library(dplyr)`.
 ```{r}
 plotdf <- select(plotdf, EventType, totalDeaths, totalInjuries, totalPropertyDamage, totalCropDamage)
+str(plotdf)
 ```
 --------
 ## 3. Results
+
+#### Which weather event is worst for health?
+
+We determine that ??? is the worst for health.
+
+To examine the health consequences of weather events, we can make a stacked bar plot of total deaths and total injuries.
+The data needs to be melted into narrow form for `library(ggplot2)` to handle. We use `library(reshape2)` to `melt()` the data from wide to narrow.
+
+```{r}
+health <- select(plotdf, EventType, totalDeaths, totalInjuries)
+health_m <- melt(health, id.var="EventType")
+g1 <- ggplot(health_m, aes(x=EventType, y=value, fill=variable)
+g1 + geom_bar(stat = "identity")
+```
+_Fig 1. Total deaths and injuries per type of weather event_
+
+#### Which weather event has the worst economic consequences?
+
+We determine that ?? have the worst economic consequences in terms of monetary damage to property and crops.
+
+To examine the economic consequences, we can again use a stacked bar plot in a process similar to the one above.
+
+```{r}
+econ <- select(plotdf, EventType, totalPropertyDamage, totalCropDamage)
+econ_m <- melt(econ, id.var="EventType")
+g2 <- ggplot(econ_m, aes(x=EventType, y=value, fill=variable)
+g2 + geom_bar(stat = "identity")
+```
+_Fig 2. Total property and crop damage, in monetary estimates, per type of weather event_
 
 
 --------
