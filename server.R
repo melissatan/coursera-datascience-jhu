@@ -27,11 +27,11 @@ shinyServer(function(input, output) {
                                 "female" = 1.08)
 
         result <- round((input$height * parent.multiplier
-                         * slope + intercept)/child.divisor,1)
+                         * slope + intercept)/child.divisor,0)
 
-        paste0("Your height is probably ",
+        paste0("Your height is estimated at ",
                 result,
-                " cm.")
+                " cm. (Look for the red square below!)")
     })
 
     output$plot <- renderPlot({
@@ -45,15 +45,15 @@ shinyServer(function(input, output) {
                                 "female" = 1.08)
 
         result <- round((input$height * parent.multiplier
-                         * slope + intercept)/child.divisor,1)
+                         * slope + intercept)/child.divisor,0)
 
         plot(child~parent, data=galton.m, pch=20,
-             main = "How you stack up against people Galton measured",
-             xlim=c(150,200), xlab="parent height (cm)",
-             ylim=c(150,200), ylab="child height (cm)")
+             main = "How you stack up against people Galton measured in 1885",
+             xlim=c(140,210), xlab="parent height (cm)",
+             ylim=c(140,210), ylab="child height (cm)")
         abline(fit, lwd=2, col="skyblue")
         points(input$height, result, col="red", pch=15)
-        text(input$height, result, "You", pos=3, col="red")
+        text(input$height, result, paste("You:",result), pos=3, col="red")
     })
 
 })
