@@ -1,0 +1,83 @@
+---
+title: "Capstone milestone report"
+author: "Melissa Tan"
+date: "Sunday, March 15, 2015"
+output: 
+  html_document
+    keep_md: yes  
+---
+
+```{r setoptions, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(knitr)
+opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
+```
+
+## Download data
+
+As instructed, the dataset must be downloaded from the link given in the Coursera website. Download from the link given [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip), and unzip.
+```{r unzip}
+if (!file.exists("./final")) {
+  fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+  download.file(fileUrl, destfile = "./swiftkey.zip")
+  unzip("./swiftkey.zip")
+}
+blogs.txt <- "./final/en_US/en_US.blogs.txt"
+news.txt <- "./final/en_US/en_US.news.txt"
+twitter.txt <- "./final/en_US/en_US.twitter.txt"
+```
+
+Unzipping gives us a directory called `final`, and inside that, another directory called `en_US`. The dataset we want is inside that folder.
+```{r ls}
+setwd("./final/en_US")
+system("ls")
+```
+
+We will be using these three datasets for text prediction:     
+* en_US.blogs.txt  
+* en_US.news.txt  
+* en_US.twitter.txt
+
+## Basic summary of data
+
+Here's a basic summary of each of the three datasets. For this section I'll mostly be using system tools (Unix commands), since they're relatively straightforward and fairly quick.
+
+### Word and line counts: 
+
+Word count: Use Unix command `wc` with `-w` flag.
+```{r wcword}
+system(wc -w *,txt)  
+```
+
+Line count: The `wc` command can also output this, with the `-l` flag.
+```{r wcline}
+system(wc -l *,txt)  
+```
+
+We can also find out the length of the longest line in each of the txt files, using `wc -L`.
+```{r wclongest}
+system(wc -L *,txt)  
+```
+
+### Basic data tables:
+
+Average number of words per line
+
+
+## Basic plots to illustrate features of the data?
+
+### Histogram to see word frequency
+
+```{r freq}
+datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
+make.lower <- "tr 'A-Z' 'a-z"
+split.uniq.sort.less <- "tr ' ' '\n' | sort | uniq -c | sort -n -r | less"
+
+unix.blog <- paste0(make.lower, " < ", datalist[1], "|",split.uniq.sort.less)
+unix.news <- paste0(make.lower, " < ", datalist[2], "|",split.uniq.sort.less)
+unix.twit <- paste0(make.lower, " < ", datalist[3], "|",split.uniq.sort.less)
+
+freq.blog <- system(unix.blog, intern=TRUE)
+freq.news <- system(unix.news, intern=TRUE)
+freq.twit <- system(unix.twit, intern=TRUE)
+```
+
