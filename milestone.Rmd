@@ -16,17 +16,14 @@ opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
 
 As instructed, the dataset must be downloaded from the link given in the Coursera website. Download from the link given [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip), and unzip.
 ```{r unzip}
-if (!file.exists("./final")) {
+if (!file.exists("../final")) {
   fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
   download.file(fileUrl, destfile = "./swiftkey.zip")
   unzip("./swiftkey.zip")
 }
-blogs.txt <- "./final/en_US/en_US.blogs.txt"
-news.txt <- "./final/en_US/en_US.news.txt"
-twitter.txt <- "./final/en_US/en_US.twitter.txt"
 ```
 
-Unzipping gives us a directory called `final`, and inside that, another directory called `en_US`. The dataset we want is inside that folder.
+Unzipping gives us a directory called `final`, and inside that, another directory called `en_US`. The datasets that we want are inside `en_US`.
 ```{r ls}
 setwd("./final/en_US")
 system("ls")
@@ -45,23 +42,58 @@ Here's a basic summary of each of the three datasets. For this section I'll most
 
 Word count: Use Unix command `wc` with `-w` flag.
 ```{r wcword}
-system(wc -w *,txt)  
+system("wc -w *.txt")  
 ```
 
 Line count: The `wc` command can also output this, with the `-l` flag.
 ```{r wcline}
-system(wc -l *,txt)  
+numlines <- system("wc -l *.txt", intern=TRUE)
+numlines
 ```
 
 We can also find out the length of the longest line in each of the txt files, using `wc -L`.
 ```{r wclongest}
-system(wc -L *,txt)  
+system("wc -L *.txt")  
 ```
 
-### Basic data tables:
+### Basic summary tables of the above
 
-Average number of words per line
+```{r tables}
+blog.numlines <- gsub('[^0-9]','',numlines[1])
+news.numlines <- gsub('[^0-9]','',numlines[2])
+twit.numlines <- gsub('[^0-9]','',numlines[3])
+```
 
+## Random sample to get training, validation and testing sets
+
+```{r sample}
+SampleTxt <- function(infile, outfile, percent, inlines, myseed) {
+  conn.in <- file(infile,"r")
+  conn.out <- file(outfile,"w")  
+  ## for each line, flip a coin to decide whether to put it in sample
+  set.seed(myseed)
+  in.sample <- rbinom(n=inlines, size=1, prob=percent)
+  i <- 0
+  num.out <- 0  # number of lines output
+  for (i in 1:inlines) {
+    currLine <- readLines(conn.in, n=1, encoding="UTF-8", skipNul=TRUE) # one line at a time
+    # if end of file, close all conns
+    if (length(currLine) == 0) {  
+      close(conn.out)  
+      close(conn.in)
+      return(num.out)
+    }  # else: write out the current line (or not)
+   if (in.sample[i] == 1) {
+      writeLines(currLine, conn.out)
+      num.out <- num.out + 1
+   }
+  }
+}
+
+datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
+blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", 0.05, blog.numlines, 60637) 
+
+```
 
 ## Basic plots to illustrate features of the data?
 
@@ -69,14 +101,16 @@ Average number of words per line
 
 ```{r freq}
 datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
-make.lower <- "tr 'A-Z' 'a-z"
-split.uniq.sort.less <- "tr ' ' '\n' | sort | uniq -c | sort -n -r | less"
+mk.lower <- "tr 'A-Z' 'a-z'"
+rm.punct <- 'tr -d "-" | tr -d "\'" | tr -s "[:punct:]" " "'
+split.uniq.sort.out <- "tr ' ' '\n' | sort | uniq -c | sort -n -r > output.txt"
 
-unix.blog <- paste0(make.lower, " < ", datalist[1], "|",split.uniq.sort.less)
-unix.news <- paste0(make.lower, " < ", datalist[2], "|",split.uniq.sort.less)
-unix.twit <- paste0(make.lower, " < ", datalist[3], "|",split.uniq.sort.less)
+unix.blog <- paste0(mk.lower," < ",datalist[1]," | ",rm.punct," | ",split.uniq.sort.out)
+unix.news <- paste0(mk.lower, " < ", datalist[2], " | ",split.uniq.sort.out)
+unix.twit <- paste0(mk.lower, " < ", datalist[3], " | ",split.uniq.sort.out)
 
-freq.blog <- system(unix.blog, intern=TRUE)
+freq.blog <- system("tr 'A-Z' 'a-z' < test.txt | less", intern=T)
+system("tr 'A-Z' 'a-z' < test.txt | less")
 freq.news <- system(unix.news, intern=TRUE)
 freq.twit <- system(unix.twit, intern=TRUE)
 ```
