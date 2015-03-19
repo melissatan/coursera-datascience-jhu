@@ -12,9 +12,13 @@ library(knitr)
 opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
 ```
 
+## Introduction
+
+The primary aim of the capstone project is to predict the next word that will appear after a given phrase. The predictions will be based on an analysis of given texts, which were collected from publicly available sources by a web crawler.
+
 ## Download data
 
-As instructed, the dataset must be downloaded from the link given in the Coursera website. Download from the link given [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip), and unzip.
+As instructed, the dataset must be downloaded from the link given in the Coursera website, [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). Unzip into working directory.
 
 ```{r unzip}
 if (!file.exists("../final")) {
@@ -24,21 +28,21 @@ if (!file.exists("../final")) {
 }
 ```
 
-Unzipping gives us a directory called `final`, and inside that, another directory called `en_US`. The datasets that we want are inside `en_US`.
+Unzipping gives us a directory called `final`. The datasets that we will use are inside the subdirectory `en_US`. Print them out using system call.
 
 ```{r ls}
 setwd("./final/en_US")
-system("ls")
+system("ls -alh")  # displays the size of each file
 ```
 
 We will be using these three datasets for text prediction:     
-* en_US.blogs.txt  
-* en_US.news.txt  
+* en_US.blogs.txt - text from blog posts
+* en_US.news.txt - text from 
 * en_US.twitter.txt
 
 ## Basic summary of data
 
-Here's a basic summary of each of the three datasets. For this section I'll mostly be using system tools (Unix commands), since they're relatively straightforward and fairly quick.
+Here's a basic summary of each of the three datasets. For this section I'll mostly be using system tools (Unix commands), since that's quick and straightforward.
 
 ### Word and line counts: 
 
@@ -46,7 +50,7 @@ Word count: Use Unix command `wc`, with `-w` flag.
 Line count: Use `wc`, with `-l` flag.   
 Length of longest line (in terms of word count): Use `wc`, with `-L` flag.  
 
-```{r wcsummary}
+```{r wc_summary}
 numwords <- system("wc -w *.txt", intern=TRUE)  # intern=TRUE to return output  
 numlines <- system("wc -l *.txt", intern=TRUE)
 longest <- system("wc -L *.txt", intern=TRUE)
@@ -65,37 +69,44 @@ news.longest  <- gsub('[^0-9]', '',  longest[2])
 twit.longest  <- gsub('[^0-9]', '',  longest[3])
 
 # create and display summary table
-blog.stats <- c(blog.numwords, blog.numlines, blog.longest)
-news.stats <- c(news.numwords, news.numlines, news.longest)
-twit.stats <- c(twit.numwords, twit.numlines, twit.longest)  
+blog.stats <- c(blog.numwords, blog.numlines, blog.longest, 
+                round(blog.numwords/blog.numlines))
+news.stats <- c(news.numwords, news.numlines, news.longest,
+                round(news.numwords/news.numlines))
+twit.stats <- c(twit.numwords, twit.numlines, twit.longest,
+                round(twit.numwords/twit.numlines))  
 data.stats <- data.frame(rbind(blog.stats, news.stats, twit.stats))
-names(data.stats) <- c("Total word count","Total line count","Number of words in longest line")
-kable(data.stats)  # display in table format
+names(data.stats) <- c("Total word count", 
+                       "Total line count", 
+                       "Number of words in longest line", 
+                       "Average words per line")
+kable(data.stats)  # display the above in table format
 ```
 
 ## Take random subsample, to further split into training, validation and testing sets
 
-Since the datasets are very large, I write a function that will produce a random subsample of each of the datasets. The function essentially flips a coin to decide whether to include a particular line from the source text in the subsample. It then writes the subsample as a txt file to disk, for convenience and reproducibility. Each subsample can be further split later on into training, validation and testing sets.
+Since the datasets are too large for my laptop memory to handle, I write a function that will produce a random subsample of each of the datasets. The function essentially flips a coin to decide whether to include a particular line from the source text in the subsample. It then writes the subsample as a txt file, for convenience and reproducibility. Each subsample can be further split later on into training, validation and testing sets. 
 
-```{r fnsample}
-SampleTxt <- function(infile, outfile, percent, inlines, seed) {
+```{r fn_sample}
+SampleTxt <- function(infile, outfile, seed, inlines, percent) {
   conn.in <- file(infile,"r")
   conn.out <- file(outfile,"w")  
-  ## for each line, flip a coin to decide whether to put it in sample
+  # for each line, flip a coin to decide whether to put it in sample
   set.seed(seed)
   in.sample <- rbinom(n=inlines, size=1, prob=percent)
   i <- 0
-  num.out <- 0  # number of lines output
+  num.out <- 0  # number of lines written out to subsample
   for (i in 1:inlines) {
-    currLine <- readLines(conn.in, n=1, encoding="UTF-8", skipNul=TRUE) # one line at a time
-    # if end of file, close all conns
+    # read in one line at a time
+    currLine <- readLines(conn.in, n=1, encoding="UTF-8", skipNul=TRUE) 
+    # if reached end of file, close all conns
     if (length(currLine) == 0) {  
       close(conn.out)  
       close(conn.in)
-      # function returns the number of lines written to subsample 
+      # return number of lines written out to subsample 
       return(num.out)  
     }  
-    # while not end of file, write out the selected line to disk
+    # while not end of file, write out the selected line to file
     if (in.sample[i] == 1) {
       writeLines(currLine, conn.out)
       num.out <- num.out + 1
@@ -104,18 +115,108 @@ SampleTxt <- function(infile, outfile, percent, inlines, seed) {
 }
 ```
 
-I will use about 5% of the original source text in each subsample. 
+I extract about 5% of the original source text for each subsample. The subsample files are saved to disk.
 
-```{r mksample}
+```{r mk_sample}
 datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
 mypercent <- 0.05
 myseed <- 60637
-blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", mypercent, blog.numlines, myseed) 
-news.samplesize <- SampleTxt(datalist[1], "news.sample.txt", mypercent, blog.numlines, myseed) 
-twit.samplesize <- SampleTxt(datalist[1], "twit.sample.txt", mypercent, blog.numlines, myseed) 
+
+blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", myseed, 
+                             blog.numlines, mypercent) 
+news.samplesize <- SampleTxt(datalist[1], "news.sample.txt", myseed, 
+                             news.numlines, mypercent) 
+twit.samplesize <- SampleTxt(datalist[1], "twit.sample.txt", myseed, 
+                             twit.numlines, mypercent) 
 ```
 
-## Basic plots to illustrate features of the data?
+No. of lines in blog sample: `r blog.samplesize` = `r round(blog.samplesize/blog.numlines * 100, digits=11)`% of original txt    
+
+No. of lines in news sample: `r news.samplesize` = `r round(news.samplesize/news.numlines * 100, digits=1)`% of original txt
+
+No. of lines in twitter sample: `r twit.samplesize` = `r round(twit.samplesize/twit.numlines * 100, digits=1)`% of original txt
+
+## Analysis of subsample
+
+### Basic summary and importing to dataframe
+
+Check the word and line statistics to see how the subsamples compare with the original text.
+
+```{r sample_wc}
+sample.numwords <- system("wc -w *.sample.txt", intern=TRUE)  # intern=TRUE to return output  
+sample.numlines <- system("wc -l *.sample.txt", intern=TRUE)
+sample.longest <- system("wc -L *.sample.txt", intern=TRUE)
+
+# number of words for each dataset
+blog.sample.numwords <- gsub('[^0-9]', '', numwords[1])
+news.sample.numwords <- gsub('[^0-9]', '', numwords[2])
+twit.sample.numwords <- gsub('[^0-9]', '', numwords[3])
+# number of lines for each dataset
+blog.sample.numlines <- gsub('[^0-9]', '', numlines[1])
+news.sample.numlines <- gsub('[^0-9]', '', numlines[2])
+twit.sample.numlines <- gsub('[^0-9]', '', numlines[3])
+# length of longest line for each dataset
+blog.sample.longest  <- gsub('[^0-9]', '',  longest[1])
+news.sample.longest  <- gsub('[^0-9]', '',  longest[2])
+twit.sample.longest  <- gsub('[^0-9]', '',  longest[3])
+
+# create and display summary table
+blog.sample.stats <- c(blog.sample.numwords, blog.sample.numlines, 
+                       blog.sample.longest, round(blog.numwords/blog.numlines))
+news.sample.stats <- c(news.sample.numwords, news.sample.numlines, 
+                       news.sample.longest, round(news.numwords/news.numlines))
+twit.sample.stats <- c(twit.sample.numwords, twit.sample.numlines, 
+                       twit.sample.longest, round(twit.numwords/twit.numlines))  
+sample.stats <- data.frame(rbind(blog.sample.stats, 
+                                 news.sample.stats, 
+                                 twit.sample.stats))
+names(sample.stats) <- c("Sample word count", 
+                       "Sample line count", 
+                       "Number of words in longest line", 
+                       "Average words per line")
+kable(sample.stats)  # display the above in table format
+```
+
+Read in each of the subsample txts as dataframe.
+
+```{r readsubsample}
+blog.mini <- readLines()
+news.mini <- readLines()
+twit.mini <- readLines()
+```
+
+### Clean up text
+
+Use the `tm` text mining package in R to clean and analyze the sample text. Convert text to lowercase, remove punctuation
+
+```{r corpus}
+library(tm)
+# build a corpus, specifying the source as a character vector
+blog.corpus <- Corpus(VectorSource(#charactervector))
+
+# convert text to lowercase
+blog.corpus <- tm_map(blog.corpus, content_transformer(tolower))
+# remove numbers
+blog.corpus <- tm_map(blog.corpus, content_transformer(removeNumbers))
+blog.corpus <- tm_map(blog.corpus, content_transformer(removePunctuation))
+# remove URLs
+removeURL <- function(x) {
+  gsub("http[[:alnum:]]", "", x)  # won't work with some links e.g. bit.ly
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(removeURL))
+
+
+```
+
+### Find frequent words and word associations
+
+Create a term-document matrix (TDM). In general, a TDM is a mathematical matrix that describes the frequency of terms (words) that occur in a collection of documents (source: Wikipedia). The rows of the matrix correspond to terms, and the columns correspond to the documents. (A document-term matrix has it the other way round, and is essentially the transpose of the TDM.)
+
+My specific term-document matrix will have the columns corresponding to the blog, news, and Twitter texts, and the rows corresponding to the words found in them. 
+
+
+
+
 
 ### Histogram to see word frequency
 
@@ -134,3 +235,18 @@ system("tr 'A-Z' 'a-z' < test.txt | less")
 freq.news <- system(unix.news, intern=TRUE)
 freq.twit <- system(unix.twit, intern=TRUE)
 ```
+
+
+## end
+
+********
+
+#### Notes and citations:
+
+I learned about how to use the `tm` package from these sources:
+
+* http://www.unt.edu/rss/class/Jon/Benchmarks/TextMining_L_JDS_Jan2014.pdf
+
+* http://www.r-bloggers.com/text-mining-the-complete-works-of-william-shakespeare/
+
+* http://www.slideshare.net/rdatamining/text-mining-with-r-an-analysis-of-twitter-data
