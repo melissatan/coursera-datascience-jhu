@@ -15,6 +15,7 @@ opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
 ## Download data
 
 As instructed, the dataset must be downloaded from the link given in the Coursera website. Download from the link given [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip), and unzip.
+
 ```{r unzip}
 if (!file.exists("../final")) {
   fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
@@ -24,6 +25,7 @@ if (!file.exists("../final")) {
 ```
 
 Unzipping gives us a directory called `final`, and inside that, another directory called `en_US`. The datasets that we want are inside `en_US`.
+
 ```{r ls}
 setwd("./final/en_US")
 system("ls")
@@ -40,38 +42,47 @@ Here's a basic summary of each of the three datasets. For this section I'll most
 
 ### Word and line counts: 
 
-Word count: Use Unix command `wc` with `-w` flag.
-```{r wcword}
-system("wc -w *.txt")  
-```
+Word count: Use Unix command `wc`, with `-w` flag.    
+Line count: Use `wc`, with `-l` flag.   
+Length of longest line (in terms of word count): Use `wc`, with `-L` flag.  
 
-Line count: The `wc` command can also output this, with the `-l` flag.
-```{r wcline}
+```{r wcsummary}
+numwords <- system("wc -w *.txt", intern=TRUE)  # intern=TRUE to return output  
 numlines <- system("wc -l *.txt", intern=TRUE)
-numlines
+longest <- system("wc -L *.txt", intern=TRUE)
+
+# number of words for each dataset
+blog.numwords <- gsub('[^0-9]', '', numwords[1])
+news.numwords <- gsub('[^0-9]', '', numwords[2])
+twit.numwords <- gsub('[^0-9]', '', numwords[3])
+# number of lines for each dataset
+blog.numlines <- gsub('[^0-9]', '', numlines[1])
+news.numlines <- gsub('[^0-9]', '', numlines[2])
+twit.numlines <- gsub('[^0-9]', '', numlines[3])
+# length of longest line for each dataset
+blog.longest  <- gsub('[^0-9]', '',  longest[1])
+news.longest  <- gsub('[^0-9]', '',  longest[2])
+twit.longest  <- gsub('[^0-9]', '',  longest[3])
+
+# create and display summary table
+blog.stats <- c(blog.numwords, blog.numlines, blog.longest)
+news.stats <- c(news.numwords, news.numlines, news.longest)
+twit.stats <- c(twit.numwords, twit.numlines, twit.longest)  
+data.stats <- data.frame(rbind(blog.stats, news.stats, twit.stats))
+names(data.stats) <- c("Total word count","Total line count","Number of words in longest line")
+kable(data.stats)  # display in table format
 ```
 
-We can also find out the length of the longest line in each of the txt files, using `wc -L`.
-```{r wclongest}
-system("wc -L *.txt")  
-```
+## Take random subsample, to further split into training, validation and testing sets
 
-### Basic summary tables of the above
+Since the datasets are very large, I write a function that will produce a random subsample of each of the datasets. The function essentially flips a coin to decide whether to include a particular line from the source text in the subsample. It then writes the subsample as a txt file to disk, for convenience and reproducibility. Each subsample can be further split later on into training, validation and testing sets.
 
-```{r tables}
-blog.numlines <- gsub('[^0-9]','',numlines[1])
-news.numlines <- gsub('[^0-9]','',numlines[2])
-twit.numlines <- gsub('[^0-9]','',numlines[3])
-```
-
-## Random sample to get training, validation and testing sets
-
-```{r sample}
-SampleTxt <- function(infile, outfile, percent, inlines, myseed) {
+```{r fnsample}
+SampleTxt <- function(infile, outfile, percent, inlines, seed) {
   conn.in <- file(infile,"r")
   conn.out <- file(outfile,"w")  
   ## for each line, flip a coin to decide whether to put it in sample
-  set.seed(myseed)
+  set.seed(seed)
   in.sample <- rbinom(n=inlines, size=1, prob=percent)
   i <- 0
   num.out <- 0  # number of lines output
@@ -81,18 +92,27 @@ SampleTxt <- function(infile, outfile, percent, inlines, myseed) {
     if (length(currLine) == 0) {  
       close(conn.out)  
       close(conn.in)
-      return(num.out)
-    }  # else: write out the current line (or not)
-   if (in.sample[i] == 1) {
+      # function returns the number of lines written to subsample 
+      return(num.out)  
+    }  
+    # while not end of file, write out the selected line to disk
+    if (in.sample[i] == 1) {
       writeLines(currLine, conn.out)
       num.out <- num.out + 1
-   }
+    }
   }
 }
+```
 
+I will use about 5% of the original source text in each subsample. 
+
+```{r mksample}
 datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
-blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", 0.05, blog.numlines, 60637) 
-
+mypercent <- 0.05
+myseed <- 60637
+blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", mypercent, blog.numlines, myseed) 
+news.samplesize <- SampleTxt(datalist[1], "news.sample.txt", mypercent, blog.numlines, myseed) 
+twit.samplesize <- SampleTxt(datalist[1], "twit.sample.txt", mypercent, blog.numlines, myseed) 
 ```
 
 ## Basic plots to illustrate features of the data?
@@ -114,4 +134,3 @@ system("tr 'A-Z' 'a-z' < test.txt | less")
 freq.news <- system(unix.news, intern=TRUE)
 freq.twit <- system(unix.twit, intern=TRUE)
 ```
-
