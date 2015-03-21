@@ -17,6 +17,10 @@ opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
 
 Given texts from blogs, news sites and Twitter that were collected from publicly available sources by a web crawler, I analyze the corpora to identify major features. The corpora will later be used to train an algorithm. The goals for the algorithm and eventual app are to predict the next word that will appear after a given phrase. This milestone report focuses on the exploratory analysis.
 
+## Executive summary
+
+
+
 ## Download data
 
 As instructed, the dataset must be downloaded from the link given in the Coursera website, [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). Unzip into parent directory.
@@ -183,17 +187,13 @@ kable(sample.stats)  # display the above in table format
 
 ## Import and clean subsample
 
-Read in each of the subsample txts.
+Read in each of the subsample txts. Use the `tm` text mining package in R to clean and analyze the subsample. 
 
 ```{r readsubsample}
 blog.mini <- readLines("./blog.sample.txt")  # imports as character vector
 news.mini <- readLines("./news.sample.txt")
 twit.mini <- readLines("./twit.sample.txt")
 ```
-
-## Visualize frequent words in subsample
-
-Use the `tm` text mining package in R to clean and analyze the subsample. 
 
 First, convert text to lowercase, and remove URLs.
 
@@ -222,7 +222,7 @@ At this juncture, I have to make a few decisions about how to handle the followi
 
 * Hyphens: It's probably easier to illustrate with an example. For a sentence such as `my mother-in-law visited--what joy-- i was absolutely -thrilled-!`, I want to convert that to `my mother-in-law visited what joy i was absolutely thrilled!`
 
-* Single quotes and apostrophes: I choose to keep intra-word apostrophes. Though I would like to keep leading apostrophes as well, I can't, because it's difficult to distinguish between those and the start of a sentence. So, for example, my code will leave `can't` unchanged, but will turn `'hello world'` into `hello world`, and similarly will turn `'twas` into `twas`. 
+* Single quotes and apostrophes: I choose to keep intra-word apostrophes, to distinguish between e.g. `its` and `it's`. Though I would like to keep leading apostrophes as well, I can't, because it's difficult to distinguish between those and the start of a sentence. So, for example, my code will leave `can't` unchanged, but will turn `'hello world'` into `hello world`, and similarly will turn `'twas` into `twas`. 
 
 ```{r corpus_custom}
 # remove any word containing numbers
@@ -255,6 +255,8 @@ blog.corpus <- tm_map(blog.corpus, content_transformer(myDashApos))
 Finally, compress extra whitespace, and trim leading and trailing whitespace.
 
 ```{r corpus_clean}
+# remove stopwords - optional
+# blog.corpus <- tm_map(blog.corpus, removeWords, stopwords("english"))
 # strip extra whitespace
 blog.corpus <- tm_map(blog.corpus, content_transformer(stripWhitespace))
 # trim leading and trailing whitespace
@@ -265,7 +267,11 @@ blog.corpus <- tm_map(blog.corpus, content_transformer(trim))
 # inspect(blog.corpus[22])
 ```
 
-## Create a term-document matrix 
+## Visualize word frequency and find word associations
+
+For this we can again use the `tm` package.
+
+### Create a term-document matrix 
 
 In general, a term-document matrix (TDM) is a mathematical matrix that describes the frequency of terms -- or essentially words -- that occur in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows of a TDM correspond to terms, and the columns correspond to the documents. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.)
 
@@ -273,31 +279,69 @@ Each line in the blog, news, and Twitter subsamples is considered one document. 
 
 ```{r tdm}
 blog.tdm <- TermDocumentMatrix(blog.corpus)
+blog.tdm
 ```
 
-Example of how to navigate TDM: Let's look for the term "winter", plus the 4 terms that come after alphabetically.
+Example of how to navigate the TDM: Let's look for the term "winter", plus the 4 terms that come after alphabetically.
 
 ```{r winter}
 i <- which(dimnames(blog.tdm)$Terms == "winter")
 inspect(blog.tdm[i+(0:5), 1:5])
 ```
 
-### Histogram to see word frequency
+### Frequency counts and histogram
 
-From the TDM, we can see which are the most frequent words. Let's look at which words appear at least 10000 times.
+Make a histogram of the frequency counts. The TDMs are extremely sparse, and also large. As a result, when I tried to do a straightforward `rowSums(as.matrix(TDM))`, I got an integer overflow error. To get around that, I use the `row_sums()` function from the `slam` package, which is meant to handle sparse arrays.
 
 ```{r hist}
-blog.freq <- findFreqTerms(x=blog.tdm, lowfreq=10000, highfreq=Inf)
+library(slam)
+blog.freq <- row_sums(blog.tdm, na.rm=TRUE)
+hist(blog.freq)
 ```
 
-As expected, these are very common words. If we want to, it's possible to remove common words from the corpus. 
+Clearly, there are truckloads of words that only appear once. We can extract some random examples.
 
+```{r once}
+blog.once <- findFreqTerms(blog.tdm, lowfreq=0, highfreq=1)
+length(blog.once)  # number of terms that appear at most one time
+set.seed(773)
+sample(blog.once, 5)  # random five
+```
 
-## end
+I can remove sparse terms so that the frequency histogram looks slightly less skewed.
+
+```{r denser}
+maxsparse <- 0.9  # set max empty space at 90% 
+blog.tdm.denser <- removeSparseTerms(blog.tdm, maxsparse)
+hist(row_sums(blog.tdm.denser, na.rm=TRUE))
+```
+
+We can also pluck out the most frequent words from the TDM. Let's find words which appear at least 10000 times.
+
+```{r freq}
+findFreqTerms(blog.tdm, lowfreq=10000, highfreq=Inf)
+```
+
+As expected, these are very common words. If we want to, it's possible to remove common words from the corpus, using `corpus <- tm_map(corpus, removeWords, stopwords("english"))` during the cleaning stage. I haven't done that because I'm not yet sure what the impact on the prediction algorithm will be.
+
+### Word associations
+
+We can find out which words are associated with which. Using the previous example for "winter":
+
+```{r assoc}
+winterwords <- findAssocs(blog.tdm, "winter", 0.1)  # min correlation = 0.1
+winterwords
+```
+
+# End
 
 ********
 
-#### Notes and credits:
+# Appendix
+
+
+
+## Notes and credits:
 
 I learned about how to use the `tm` package from these sources:
 
