@@ -35,6 +35,7 @@ Unzipping gives us a directory called `final`. The datasets that we will use are
 orig.wd <- getwd() # save working dir, to return to later
 setwd("../final/en_US")
 system("ls")
+setwd(orig.wd)
 ```
 
 We will be using these three datasets for text prediction:     
@@ -93,8 +94,8 @@ Since the datasets are too large for my laptop memory to handle, I write a funct
 
 ```{r fn_sample}
 ## Function to create subsample of txt file 
-SampleTxt <- function(infile, outfile, seed, inlines, percent, readtype) {
-  conn.in <- file(infile, readtype)  # readtype = "r" or "rb"
+SampleTxt <- function(infile, outfile, seed, inlines, percent, readmode) {
+  conn.in <- file(infile, readmode)  # readmode = "r" or "rb"
   conn.out <- file(outfile,"w")  
   # for each line, flip a coin to decide whether to put it in sample
   set.seed(seed)
@@ -133,6 +134,7 @@ if (!file.exists("./blog.sample.txt")) {
   SampleTxt(datalist[1], "blog.sample.txt", myseed, blog.numlines, mypercent, "r")
 }
 if (!file.exists("./news.sample.txt")) {
+  # need to use read mode rb for this because otherwise it breaks
   SampleTxt(datalist[2], "news.sample.txt", myseed, news.numlines, mypercent, "rb")
 }
 if (!file.exists("./twit.sample.txt")) {
@@ -184,14 +186,16 @@ kable(sample.stats)  # display the above in table format
 Read in each of the subsample txts.
 
 ```{r readsubsample}
-blog.mini <- readLines("./blog.sample.txt")  # produces character vector
+blog.mini <- readLines("./blog.sample.txt")  # imports as character vector
 news.mini <- readLines("./news.sample.txt")
 twit.mini <- readLines("./twit.sample.txt")
 ```
 
 ## Visualize frequent words in subsample
 
-Use the `tm` text mining package in R to clean and analyze the subsample. Convert text to lowercase. Remove numbers, punctuation, URLs.
+Use the `tm` text mining package in R to clean and analyze the subsample. 
+
+First, convert text to lowercase, and remove URLs.
 
 ```{r corpus}
 library(tm)
@@ -200,41 +204,93 @@ blog.corpus <- Corpus(VectorSource(blog.mini))
 
 # convert text to lowercase
 blog.corpus <- tm_map(blog.corpus, content_transformer(tolower))
-# remove numbers
-blog.corpus <- tm_map(blog.corpus, content_transformer(removeNumbers))
-# remove punctuation. custom function because removePunctuation is too much
-myRemovePunctuation <- function(x) {  
-  x <- gsub("([-'])|[[:punct:]]", " ", x) # [:punct:] minus ' and -
-  return(x)
-}
-blog.corpus <- tm_map(blog.corpus, content_transformer(myRemovePunctuation))
-# remove URLs
+
+# remove URLs within string and at end of string
 removeURL <- function(x) {
-  gsub("http[[:alnum:]]", "", x)  # won't work with some links e.g. bit.ly
+  gsub("http.*?( |$)", "", x)  # won't work with shortened URLs e.g. bit.ly
 }
 blog.corpus <- tm_map(blog.corpus, content_transformer(removeURL))
-# strip extra whitespace
-blog.corpus <- tm_map(blog.corpus, content_transformer(stripWhitespace))
 ```
 
-The text now looks something like this: `r inspect(blog.corpus[1])`.
+At this juncture, I have to make a few decisions about how to handle the following cases that may appear in the text.
+
+* Words containing numbers, e.g. "007", "1st", "b2c", "d20", "24/7". I choose to remove all of these.
+
+* Smart quotes, e.g. `'`. I choose to convert all to single quotes e.g. `'`.
+
+* Punctuation: there is a standard `removePunctuation()` function in the `tm` package. However, it removes the entire `[:punct:]` POSIX class, including hyphens and single quotes or apostrophes. I find this to be a little excessive, because I still want to keep the intra-word occurrences of `-` and `'`, e.g. `addle-pated`, `mother-in-law`, `isn't`. So I write my own functions to remove most punctuation except `-` and `'`, and then handle those two marks separately.
+
+* Hyphens: It's probably easier to illustrate with an example. For a sentence such as `my mother-in-law visited--what joy-- i was absolutely -thrilled-!`, I want to convert that to `my mother-in-law visited what joy i was absolutely thrilled!`
+
+* Single quotes and apostrophes: I choose to keep intra-word apostrophes. Though I would like to keep leading apostrophes as well, I can't, because it's difficult to distinguish between those and the start of a sentence. So, for example, my code will leave `can't` unchanged, but will turn `'hello world'` into `hello world`, and similarly will turn `'twas` into `twas`. 
+
+```{r corpus_custom}
+# remove any word containing numbers
+myRemoveNumbers <- function(x) {
+  gsub("\\S*[0-9]+\\S*", " ", x)
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(myRemoveNumbers))
+
+# convert smart single quotes to straight single quotes
+mySingleQuote <- function(x) {
+  gsub("[\x82\x91\x92]", "'", x)  # ANSI version, not Unicode version
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(mySingleQuote))
+
+# custom function to remove most punctuation
+myRemovePunctuation <- function(x) {
+  # replace everything that isn't alphanumeric, space, apostrophe or hyphen
+  gsub("[^[:alnum:][:space:]'-]", " ", x)
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(myRemovePunctuation))
+
+# deal with dashes and apostrophes within words
+myDashApos <- function(x) {
+  x <- gsub("--+", " ", x)
+  gsub("(\\w['-]\\w)|[[:punct:]]", "\\1", x, perl=TRUE)
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(myDashApos))
+```
+
+Finally, compress extra whitespace, and trim leading and trailing whitespace.
+
+```{r corpus_clean}
+# strip extra whitespace
+blog.corpus <- tm_map(blog.corpus, content_transformer(stripWhitespace))
+# trim leading and trailing whitespace
+trim <- function(x) {
+  gsub("^\\s+|\\s+$", "", x)
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(trim))
+# inspect(blog.corpus[22])
+```
 
 ## Create a term-document matrix 
 
 In general, a term-document matrix (TDM) is a mathematical matrix that describes the frequency of terms -- or essentially words -- that occur in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows of a TDM correspond to terms, and the columns correspond to the documents. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.)
 
-Each line in the blog, news, and Twitter subsamples is considered a document. The terms in the rows correspond to the words found in the subsample. 
+Each line in the blog, news, and Twitter subsamples is considered one document. The terms in the rows correspond to words found in the subsample. 
 
 ```{r tdm}
 blog.tdm <- TermDocumentMatrix(blog.corpus)
+```
 
+Example of how to navigate TDM: Let's look for the term "winter", plus the 4 terms that come after alphabetically.
+
+```{r winter}
+i <- which(dimnames(blog.tdm)$Terms == "winter")
+inspect(blog.tdm[i+(0:5), 1:5])
 ```
 
 ### Histogram to see word frequency
 
-```{r hist}
+From the TDM, we can see which are the most frequent words. Let's look at which words appear at least 10000 times.
 
+```{r hist}
+blog.freq <- findFreqTerms(x=blog.tdm, lowfreq=10000, highfreq=Inf)
 ```
+
+As expected, these are very common words. If we want to, it's possible to remove common words from the corpus. 
 
 
 ## end
@@ -250,3 +306,9 @@ I learned about how to use the `tm` package from these sources:
 * http://www.r-bloggers.com/text-mining-the-complete-works-of-william-shakespeare/
 
 * http://www.slideshare.net/rdatamining/text-mining-with-r-an-analysis-of-twitter-data
+
+Regex help that I relied on: 
+
+* http://axonflux.com/handy-regexes-for-smart-quotes
+
+* https://books.google.com.sg/books?id=xz37q8h49iYC&pg=PT44&lpg=PT44&dq=text+mining+should+i+remove+hyphens&source=bl&ots=wHc3T7krC-&sig=qSugQYLDgmKyas3_2Vrz9ZqN21E&hl=en&sa=X&ei=5n8NVf29IcjnuQSQ1oGwBA&redir_esc=y#v=onepage&q=text%20mining%20should%20i%20remove%20hyphens&f=false
