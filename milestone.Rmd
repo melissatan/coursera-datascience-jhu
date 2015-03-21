@@ -1,10 +1,11 @@
 ---
-title: "Capstone milestone report"
+title: "Swiftkey capstone milestone report"
 author: "Melissa Tan"
-date: "Sunday, March 15, 2015"
-output: 
-  html_document
-    keep_md: yes  
+date: "Sunday, March 22, 2015"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default  
 ---
 
 ```{r setoptions, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
@@ -14,25 +15,26 @@ opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
 
 ## Introduction
 
-The primary aim of the capstone project is to predict the next word that will appear after a given phrase. The predictions will be based on an analysis of given texts, which were collected from publicly available sources by a web crawler.
+Given texts from blogs, news sites and Twitter that were collected from publicly available sources by a web crawler, I analyze the corpora to identify major features. The corpora will later be used to train an algorithm. The goals for the algorithm and eventual app are to predict the next word that will appear after a given phrase. This milestone report focuses on the exploratory analysis.
 
 ## Download data
 
-As instructed, the dataset must be downloaded from the link given in the Coursera website, [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). Unzip into working directory.
+As instructed, the dataset must be downloaded from the link given in the Coursera website, [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). Unzip into parent directory.
 
 ```{r unzip}
 if (!file.exists("../final")) {
   fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
-  download.file(fileUrl, destfile = "./swiftkey.zip")
-  unzip("./swiftkey.zip")
+  download.file(fileUrl, destfile = "../swiftkey.zip")
+  unzip("../swiftkey.zip")
 }
 ```
 
 Unzipping gives us a directory called `final`. The datasets that we will use are inside the subdirectory `en_US`. Print them out using system call.
 
 ```{r ls}
-setwd("./final/en_US")
-system("ls -alh")  # displays the size of each file
+orig.wd <- getwd() # save working dir, to return to later
+setwd("../final/en_US")
+system("ls")
 ```
 
 We will be using these three datasets for text prediction:     
@@ -51,52 +53,55 @@ Line count: Use `wc`, with `-l` flag.
 Length of longest line (in terms of word count): Use `wc`, with `-L` flag.  
 
 ```{r wc_summary}
+setwd("../final/en_US")
 numwords <- system("wc -w *.txt", intern=TRUE)  # intern=TRUE to return output  
 numlines <- system("wc -l *.txt", intern=TRUE)
 longest <- system("wc -L *.txt", intern=TRUE)
+setwd(orig.wd)  # return to original working dir, ie. the parent of /final
 
 # number of words for each dataset
-blog.numwords <- gsub('[^0-9]', '', numwords[1])
-news.numwords <- gsub('[^0-9]', '', numwords[2])
-twit.numwords <- gsub('[^0-9]', '', numwords[3])
+blog.numwords <- as.numeric(gsub('[^0-9]', '', numwords[1]))
+news.numwords <- as.numeric(gsub('[^0-9]', '', numwords[2]))
+twit.numwords <- as.numeric(gsub('[^0-9]', '', numwords[3]))
 # number of lines for each dataset
-blog.numlines <- gsub('[^0-9]', '', numlines[1])
-news.numlines <- gsub('[^0-9]', '', numlines[2])
-twit.numlines <- gsub('[^0-9]', '', numlines[3])
+blog.numlines <- as.numeric(gsub('[^0-9]', '', numlines[1]))
+news.numlines <- as.numeric(gsub('[^0-9]', '', numlines[2]))
+twit.numlines <- as.numeric(gsub('[^0-9]', '', numlines[3]))
 # length of longest line for each dataset
-blog.longest  <- gsub('[^0-9]', '',  longest[1])
-news.longest  <- gsub('[^0-9]', '',  longest[2])
-twit.longest  <- gsub('[^0-9]', '',  longest[3])
+blog.longest  <- as.numeric(gsub('[^0-9]', '', longest[1]))
+news.longest  <- as.numeric(gsub('[^0-9]', '', longest[2]))
+twit.longest  <- as.numeric(gsub('[^0-9]', '', longest[3]))
 
 # create and display summary table
-blog.stats <- c(blog.numwords, blog.numlines, blog.longest, 
+blog.stats <- c(blog.numwords, blog.numlines, blog.longest,
                 round(blog.numwords/blog.numlines))
 news.stats <- c(news.numwords, news.numlines, news.longest,
                 round(news.numwords/news.numlines))
-twit.stats <- c(twit.numwords, twit.numlines, twit.longest,
+twit.stats <- c(twit.numwords, twit.numlines, twit.longest, 
                 round(twit.numwords/twit.numlines))  
 data.stats <- data.frame(rbind(blog.stats, news.stats, twit.stats))
 names(data.stats) <- c("Total word count", 
                        "Total line count", 
-                       "Number of words in longest line", 
-                       "Average words per line")
+                       "Words in longest line",
+                       "Avg words per line")
 kable(data.stats)  # display the above in table format
 ```
 
-## Take random subsample, to further split into training, validation and testing sets
+## Take random subsample
 
 Since the datasets are too large for my laptop memory to handle, I write a function that will produce a random subsample of each of the datasets. The function essentially flips a coin to decide whether to include a particular line from the source text in the subsample. It then writes the subsample as a txt file, for convenience and reproducibility. Each subsample can be further split later on into training, validation and testing sets. 
 
 ```{r fn_sample}
-SampleTxt <- function(infile, outfile, seed, inlines, percent) {
-  conn.in <- file(infile,"r")
+## Function to create subsample of txt file 
+SampleTxt <- function(infile, outfile, seed, inlines, percent, readtype) {
+  conn.in <- file(infile, readtype)  # readtype = "r" or "rb"
   conn.out <- file(outfile,"w")  
   # for each line, flip a coin to decide whether to put it in sample
   set.seed(seed)
   in.sample <- rbinom(n=inlines, size=1, prob=percent)
   i <- 0
   num.out <- 0  # number of lines written out to subsample
-  for (i in 1:inlines) {
+  for (i in 1:(inlines+1)) {
     # read in one line at a time
     currLine <- readLines(conn.in, n=1, encoding="UTF-8", skipNul=TRUE) 
     # if reached end of file, close all conns
@@ -115,125 +120,120 @@ SampleTxt <- function(infile, outfile, seed, inlines, percent) {
 }
 ```
 
-I extract about 5% of the original source text for each subsample. The subsample files are saved to disk.
+I extract about 5% of the original source text for each subsample. The subsample files are saved in the current working directory.
 
 ```{r mk_sample}
-datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
+datalist <- c("../final/en_US/en_US.blogs.txt",
+              "../final/en_US/en_US.news.txt",
+              "../final/en_US/en_US.twitter.txt")
 mypercent <- 0.05
 myseed <- 60637
 
-blog.samplesize <- SampleTxt(datalist[1], "blog.sample.txt", myseed, 
-                             blog.numlines, mypercent) 
-news.samplesize <- SampleTxt(datalist[1], "news.sample.txt", myseed, 
-                             news.numlines, mypercent) 
-twit.samplesize <- SampleTxt(datalist[1], "twit.sample.txt", myseed, 
-                             twit.numlines, mypercent) 
+if (!file.exists("./blog.sample.txt")) {
+  SampleTxt(datalist[1], "blog.sample.txt", myseed, blog.numlines, mypercent, "r")
+}
+if (!file.exists("./news.sample.txt")) {
+  SampleTxt(datalist[2], "news.sample.txt", myseed, news.numlines, mypercent, "rb")
+}
+if (!file.exists("./twit.sample.txt")) {
+  SampleTxt(datalist[3], "twit.sample.txt", myseed, twit.numlines, mypercent, "r")
+}
 ```
 
-No. of lines in blog sample: `r blog.samplesize` = `r round(blog.samplesize/blog.numlines * 100, digits=11)`% of original txt    
+## Basic summary of subsample
 
-No. of lines in news sample: `r news.samplesize` = `r round(news.samplesize/news.numlines * 100, digits=1)`% of original txt
-
-No. of lines in twitter sample: `r twit.samplesize` = `r round(twit.samplesize/twit.numlines * 100, digits=1)`% of original txt
-
-## Analysis of subsample
-
-### Basic summary and importing to dataframe
-
-Check the word and line statistics to see how the subsamples compare with the original text.
+Compute word and line statistics to see how the subsamples compare with the source text.
 
 ```{r sample_wc}
-sample.numwords <- system("wc -w *.sample.txt", intern=TRUE)  # intern=TRUE to return output  
+sample.numwords <- system("wc -w *.sample.txt", intern=TRUE)  
 sample.numlines <- system("wc -l *.sample.txt", intern=TRUE)
 sample.longest <- system("wc -L *.sample.txt", intern=TRUE)
 
 # number of words for each dataset
-blog.sample.numwords <- gsub('[^0-9]', '', numwords[1])
-news.sample.numwords <- gsub('[^0-9]', '', numwords[2])
-twit.sample.numwords <- gsub('[^0-9]', '', numwords[3])
+blog.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[1]))
+news.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[2]))
+twit.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[3]))
 # number of lines for each dataset
-blog.sample.numlines <- gsub('[^0-9]', '', numlines[1])
-news.sample.numlines <- gsub('[^0-9]', '', numlines[2])
-twit.sample.numlines <- gsub('[^0-9]', '', numlines[3])
+blog.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[1]))
+news.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[2]))
+twit.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[3]))
 # length of longest line for each dataset
-blog.sample.longest  <- gsub('[^0-9]', '',  longest[1])
-news.sample.longest  <- gsub('[^0-9]', '',  longest[2])
-twit.sample.longest  <- gsub('[^0-9]', '',  longest[3])
+blog.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[1]))
+news.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[2]))
+twit.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[3]))
 
 # create and display summary table
-blog.sample.stats <- c(blog.sample.numwords, blog.sample.numlines, 
-                       blog.sample.longest, round(blog.numwords/blog.numlines))
-news.sample.stats <- c(news.sample.numwords, news.sample.numlines, 
-                       news.sample.longest, round(news.numwords/news.numlines))
-twit.sample.stats <- c(twit.sample.numwords, twit.sample.numlines, 
-                       twit.sample.longest, round(twit.numwords/twit.numlines))  
+blog.sample.stats <- c(blog.sample.numwords, blog.sample.numlines, blog.sample.longest,
+                      round(blog.sample.numwords/blog.sample.numlines))
+news.sample.stats <- c(news.sample.numwords, news.sample.numlines, news.sample.longest,
+                      round(news.sample.numwords/news.sample.numlines))
+twit.sample.stats <- c(twit.sample.numwords, twit.sample.numlines, twit.sample.longest,
+                      round(twit.sample.numwords/twit.sample.numlines))  
 sample.stats <- data.frame(rbind(blog.sample.stats, 
                                  news.sample.stats, 
                                  twit.sample.stats))
 names(sample.stats) <- c("Sample word count", 
                        "Sample line count", 
-                       "Number of words in longest line", 
-                       "Average words per line")
+                       "Words in longest line", 
+                       "Avg words per line")
 kable(sample.stats)  # display the above in table format
 ```
 
-Read in each of the subsample txts as dataframe.
+## Import and clean subsample
+
+Read in each of the subsample txts.
 
 ```{r readsubsample}
-blog.mini <- readLines()
-news.mini <- readLines()
-twit.mini <- readLines()
+blog.mini <- readLines("./blog.sample.txt")  # produces character vector
+news.mini <- readLines("./news.sample.txt")
+twit.mini <- readLines("./twit.sample.txt")
 ```
 
-### Clean up text
+## Visualize frequent words in subsample
 
-Use the `tm` text mining package in R to clean and analyze the sample text. Convert text to lowercase, remove punctuation
+Use the `tm` text mining package in R to clean and analyze the subsample. Convert text to lowercase. Remove numbers, punctuation, URLs.
 
 ```{r corpus}
 library(tm)
-# build a corpus, specifying the source as a character vector
-blog.corpus <- Corpus(VectorSource(#charactervector))
+# build a corpus, specifying the vector source as a character vector
+blog.corpus <- Corpus(VectorSource(blog.mini))
 
 # convert text to lowercase
 blog.corpus <- tm_map(blog.corpus, content_transformer(tolower))
 # remove numbers
 blog.corpus <- tm_map(blog.corpus, content_transformer(removeNumbers))
-blog.corpus <- tm_map(blog.corpus, content_transformer(removePunctuation))
+# remove punctuation. custom function because removePunctuation is too much
+myRemovePunctuation <- function(x) {  
+  x <- gsub("([-'])|[[:punct:]]", " ", x) # [:punct:] minus ' and -
+  return(x)
+}
+blog.corpus <- tm_map(blog.corpus, content_transformer(myRemovePunctuation))
 # remove URLs
 removeURL <- function(x) {
   gsub("http[[:alnum:]]", "", x)  # won't work with some links e.g. bit.ly
 }
 blog.corpus <- tm_map(blog.corpus, content_transformer(removeURL))
+# strip extra whitespace
+blog.corpus <- tm_map(blog.corpus, content_transformer(stripWhitespace))
+```
 
+The text now looks something like this: `r inspect(blog.corpus[1])`.
+
+## Create a term-document matrix 
+
+In general, a term-document matrix (TDM) is a mathematical matrix that describes the frequency of terms -- or essentially words -- that occur in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows of a TDM correspond to terms, and the columns correspond to the documents. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.)
+
+Each line in the blog, news, and Twitter subsamples is considered a document. The terms in the rows correspond to the words found in the subsample. 
+
+```{r tdm}
+blog.tdm <- TermDocumentMatrix(blog.corpus)
 
 ```
 
-### Find frequent words and word associations
-
-Create a term-document matrix (TDM). In general, a TDM is a mathematical matrix that describes the frequency of terms (words) that occur in a collection of documents (source: Wikipedia). The rows of the matrix correspond to terms, and the columns correspond to the documents. (A document-term matrix has it the other way round, and is essentially the transpose of the TDM.)
-
-My specific term-document matrix will have the columns corresponding to the blog, news, and Twitter texts, and the rows corresponding to the words found in them. 
-
-
-
-
-
 ### Histogram to see word frequency
 
-```{r freq}
-datalist <- c("en_US.blogs.txt","en_US.news.txt","en_US.twitter.txt")
-mk.lower <- "tr 'A-Z' 'a-z'"
-rm.punct <- 'tr -d "-" | tr -d "\'" | tr -s "[:punct:]" " "'
-split.uniq.sort.out <- "tr ' ' '\n' | sort | uniq -c | sort -n -r > output.txt"
+```{r hist}
 
-unix.blog <- paste0(mk.lower," < ",datalist[1]," | ",rm.punct," | ",split.uniq.sort.out)
-unix.news <- paste0(mk.lower, " < ", datalist[2], " | ",split.uniq.sort.out)
-unix.twit <- paste0(mk.lower, " < ", datalist[3], " | ",split.uniq.sort.out)
-
-freq.blog <- system("tr 'A-Z' 'a-z' < test.txt | less", intern=T)
-system("tr 'A-Z' 'a-z' < test.txt | less")
-freq.news <- system(unix.news, intern=TRUE)
-freq.twit <- system(unix.twit, intern=TRUE)
 ```
 
 
@@ -241,7 +241,7 @@ freq.twit <- system(unix.twit, intern=TRUE)
 
 ********
 
-#### Notes and citations:
+#### Notes and credits:
 
 I learned about how to use the `tm` package from these sources:
 
