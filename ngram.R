@@ -3,6 +3,7 @@
 ## Load libraries
 library(tm)
 library(RWeka)
+library(slam)
 
 ## Download the datasets, unzip into parent directory
 if (!file.exists("../final")) {
@@ -174,36 +175,22 @@ CleanCorpus <- function(my.corpus) {  # input should be a Corpus object
   return(my.corpus)
 }
 
-# Clean up the train corpus
-blog.train <- readLines("./blog.train.txt")
-blog.corpus.raw <- Corpus(VectorSource(blog.train))
-blog.corpus <- CleanCorpus(blog.corpus.raw)
-# NB. can't use tm::writeCorpus() because that generates individual documents
-# writeLines(as.character(blog.corpus), con="blog.corpus.txt")
-rm(blog.corpus.raw)
+## Import training set
 
-news.train <- readLines("./news.train.txt")
-news.corpus.raw <- Corpus(VectorSource(news.train))
-news.corpus <- CleanCorpus(news.corpus.raw)
-# writeLines(as.character(news.corpus), con="news.corpus.txt")
-rm(news.corpus.raw)
 
-twit.train <- readLines("./twit.train.txt")
-twit.corpus.raw <- Corpus(VectorSource(twit.train))
-twit.corpus <- CleanCorpus(twit.corpus.raw)
-# writeLines(as.character(twit.corpus), con="twit.corpus.txt")
-rm(twit.corpus.raw)
-
-## From clean corpus, make TDM
-blog.tdm1 <- TermDocumentMatrix(blog.corpus)
-news.tdm1 <- TermDocumentMatrix(news.corpus)
-twit.tdm1 <- TermDocumentMatrix(twit.corpus)
-
-## Remove sparse terms
-max.empty <- 0.8  # set max empty space (zeroes)
-blog.tdm1.dense <- removeSparseTerms(blog.tdm, max.empty)
-news.tdm1.dense <- removeSparseTerms(news.tdm, max.empty)
-twit.tdm1.dense <- removeSparseTerms(twit.tdm, max.empty+0.1)
+## Combine into one and clean
+if (!file.exists("./comb.train.txt")) {
+  blog.train <- readLines("./blog.train.txt")
+  news.train <- readLines("./news.train.txt")
+  twit.train <- readLines("./twit.train.txt")
+  comb.train <- c(blog.train, news.train, twit.train)
+  rm(blog.train); rm(news.train); rm(twit.train)
+  writeLines(comb.train, "./comb.train.txt")
+}
+comb.train <- readLines("./comb.train.txt")
+comb.corpus.raw <- Corpus(VectorSource(comb.train))
+comb.corpus <- CleanCorpus(comb.corpus.raw)
+rm(comb.train); rm(comb.corpus.raw)
 
 ## Functions to create n-gram Tokenizer to pass on to TDM constructor
 BigramTokenizer <- function(x) {
@@ -228,20 +215,73 @@ QuadgramTDM <- function(x) {
   tdm <- TermDocumentMatrix(x, control=list(tokenize=QuadgramTokenizer))
   return(tdm)
 }
-# Make n-gram TDMs
 
-# Bigrams
-blog.tdm2 <- BigramTDM(blog.corpus)
-news.tdm2 <- BigramTDM(news.corpus)
-twit.tdm2 <- BigramTDM(twit.corpus)
+## From clean corpus, make 1-gram TDM and then dataframe.
+comb.tdm1 <- TermDocumentMatrix(comb.corpus)
+n1 <- data.frame(dimnames(comb.tdm1)$Terms, row_sums(comb.tdm1))
+colnames(n1) <- c("term", "count")
+rownames(n1) <- NULL
+rm(comb.tdm1)
+write.csv(n1, "n1.csv")
 
-# Trigrams
-#blog.tdm3 <- TrigramTDM(blog.corpus)
-#news.tdm3 <- TrigramTDM(news.corpus)
-#twit.tdm3 <- TrigramTDM(twit.corpus)
-
-# Quadgrams
+## Remove sparse terms -- doesn't really work because we end up with stopwords
+# max.empty <- 0.99  # set max empty space (zeroes)
+# comb.tdm1.dense <- removeSparseTerms(comb.tdm1, max.empty)
+# comb.tdm1.dense
 
 # For testing and debugging - inspect n-gram TDMs:
-# i <- which(dimnames(blog.tdm)$Terms == "a a")
-# inspect(blog.tdm[i+(0:10), 1:20])
+#i <- which(dimnames(blog.tdm1.dense)$Terms == "beer")
+#inspect(blog.tdm1.dense[i+(0:10), 1:20])
+
+## Make n-gram TDMs and turn into dataframe
+comb.tdm2 <- BigramTDM(comb.corpus)
+n2 <- data.frame(dimnames(comb.tdm2)$Terms, row_sums(comb.tdm2))
+colnames(n2) <- c("term", "count")
+rownames(n2) <- NULL
+rm(comb.tdm2)
+write.csv(n2, "n2.csv"); rm(n2)
+
+comb.tdm3 <- TrigramTDM(comb.corpus)
+n3 <- data.frame(dimnames(comb.tdm3)$Terms, row_sums(comb.tdm3))
+colnames(n3) <- c("term", "count")
+rownames(n3) <- NULL
+rm(comb.tdm3)
+write.csv(n3, "n3.csv"); rm(n3)
+
+comb.tdm4 <- QuadgramTDM(comb.corpus)
+n4 <- data.frame(dimnames(comb.tdm4)$Terms, row_sums(comb.tdm4))
+colnames(n4) <- c("term", "count")
+rownames(n4) <- NULL
+rm(comb.tdm4)
+write.csv(n3, "n3.csv"); rm(n3)
+
+## Function that counts all terms that occur only once
+CountUnk <- function(df) {
+  return(sum(df$count == 1))
+}
+
+## Filter df to get only the terms that appear more than once.
+n1 <- subset(n1, count > 1)
+n1 <- rbind(n1, c("UNK",CountUnk(n1)))
+
+n2 <- subset(n2, count > 1)
+n2 <- rbind(n2, c("UNK",CountUnk(n2)))
+
+n3 <- subset(n3, count > 1)
+n3 <- rbind(n3, c("UNK",CountUnk(n3)))
+
+n4 <- subset(n4, count > 1)
+n4 <- rbind(n4, c("UNK",CountUnk(n4)))
+
+## Function that takes a phrase and looks for it in df
+FindPhrase <- function(x) {  # x must be string
+  words <- strsplit(x, " ")  # split string by space
+  len <- length(words)
+  last3 <- paste(words[len-2], words[len-1], words[len])
+  last2 <- paste(words[len-1], words[len])
+  last1 <- words[len]
+
+}
+
+
+
