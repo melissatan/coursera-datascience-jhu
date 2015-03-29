@@ -250,7 +250,7 @@ I can remove rarely seen words such as the ones above, so that the frequency his
 
 ![](milestone_files/figure-html/densehist-1.png) 
 
-Frankly, I don't know why the new Twitter plot looks so strange. I'll figure that out later but if you know why please let me know! 
+The histogram for the dense Twitter TDM looks like that because after removing all the rare words, we were only left with one word: "the". So we have to be careful when removing sparse terms.
 
 ### Find the most frequent words
 
