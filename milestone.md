@@ -73,7 +73,7 @@ The importing process altered the encoding for special characters, and thus the 
 
 
 
-R has a text mining package called `tm`, which can turn the text into a special object in R called a "corpus", for easier analysis and navigation. 
+R has a text mining package called `tm`, which can turn the text into a special object in R called a "corpus", for easier analysis and navigation. We do not need to go into details about this right now, but there is more discussion in the Appendix if you are interested.
 
 
 
@@ -101,7 +101,52 @@ First, I turn each of the 3 subsamples into a corpus. Next, I will clean up the 
 
 
 
-After all the changes, the sample lines we saw displayed above now look different. Now, let's compare and contrast the raw versions and cleaned versions, by printing out a sample line from each corpus before and after. I've arbitrarily chosen the 7th line.
+## Visualize word frequency
+
+
+
+### Frequency counts and histogram
+
+Make a histogram of the word frequency counts. 
+
+![](milestone_files/figure-html/freqhist-1.png) 
+
+Clearly, in all three cases, there are truckloads of words that only appear once. We can count how many of these there are, and display some random examples.
+
+
+          No. of words that appear only once   Examples of such words in the text 
+--------  -----------------------------------  -----------------------------------
+blog      18950                                archeon usayn shivers              
+news      19218                                coie midori regionalization        
+Twitter   19625                                nny clover rih                     
+
+I can remove rarely seen words such as the ones above, so that the frequency histogram looks less skewed. Here's the new, "dense" histograms after removing rare words.
+
+![](milestone_files/figure-html/densehist-1.png) 
+
+The histogram for the dense Twitter TDM looks like that because after removing all the rare words, we were only left with one word: "the". So we have to be careful when removing sparse terms.
+
+### Plans for the eventual app and algorithm
+
+To make the algorithm into an app, I need to reduce the size of the data such that they can be stored easily on a server. I intend to shrink the TDM by replacing all rare words with "UNK", to denote an "unknown" word, which will make the TDM less sparse. I will treat "UNK" as a term to be factored into the prediction, just like all the other words in the corpus. I do not plan to correct for typos, since I assume that they will be removed during the "UNK" replacements.
+
+My plan for the algorithm is to create trigram, bigram and unigram TDMs for each corpus. 
+
+* When presented with a phrase, I will first check the trigram TDM to see what is the most likely word that comes after the final three words in the phrase. 
+
+* If I don't get any probable answer, I'll check the bigram TDM to see the most likely word that follows after the final two words in the phrase. 
+
+* And if that still doesn't give me a likely candidate, I'll just use the unigram TDM to predict the next word based on the most common single word in the corpus.
+
+* The above sequence of steps is commonly referred to as a "back off" procedure.
+
+## End of report (see Appendix for code chunks)
+
+********
+
+## Appendix
+
+After all the cleaning, the sample lines look different. Compare the raw versions and cleaned versions, by printing out a sample line from each corpus before and after. I've arbitrarily chosen the 7th line.
 
 
 ```r
@@ -177,19 +222,15 @@ inspect(twit.corpus[k])      # after cleaning
 ## missing a very important page from my booking notebook this isnt good
 ```
 
-## Visualize word frequency and find word associations
+### Navigating a TDM
 
-To find word frequencies, we can again use the `tm` package. The very first thing we need to do is turn the corpus into something called a "term-document matrix" (TDM for short).
+To find word frequencies, we can use the `tm` package. The very first thing we need to do is turn the corpus into something called a "term-document matrix" (TDM for short). A TDM is basically a matrix that displays the frequency of words found in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows correspond to each word, and the columns correspond to each document. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.) 
 
-A TDM is basically a matrix that displays the frequency of words found in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows correspond to each word, and the columns correspond to each document. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.) 
-
-For our TDM, note that each line in the blog, news, and Twitter subsamples is considered one document by itself.  
-
-
+For our TDM, note that each line in the blog, news, and Twitter subsamples is considered one document by itself. 
 
 When talking about TDMs, there is an important indicator called "sparsity", which essentially gauges how many zeroes there are in the matrix. A sparse matrix is a matrix with a high percentage of zeroes. The subsample TDMs have extremely high sparsity, at nearly 100%.
 
-This might not make sense yet, so to illustrate, let's look at an example. Let's search for the word "winter" in the blog subsample text, plus the next 4 words alphabetically. And let's restrict this to the first 10 lines. We see that in the first 10 lines of the blog subsample text, it's all zeroes, meaning that there are no mentions of "winter" at all.
+To illustrate how to navigate a term-document matrix, let's look at an example. Let's search for the word "winter" in the blog subsample text, plus the next 4 words alphabetically. And let's restrict this to the first 10 lines. We see that in the first 10 lines of the blog subsample text, it's all zeroes, meaning that there are no mentions of "winter" at all.
 
 
 ```
@@ -230,31 +271,11 @@ For a much more common word, "and", the situation is different. Again, let's loo
 ```
 
 We can see that the word "and" does appear several times within the first 10 lines of the blog subsample text.
-
-### Frequency counts and histogram
-
-After creating the TDM, I make a histogram of the word frequency counts. 
-
-![](milestone_files/figure-html/freqhist-1.png) 
-
-Clearly, in all three cases, there are truckloads of words that only appear once. We can count how many of these there are, and display some random examples.
-
-
-          No. of words that appear only once   Examples of such words in the text 
---------  -----------------------------------  -----------------------------------
-blog      18950                                archeon usayn shivers              
-news      19218                                coie midori regionalization        
-Twitter   19625                                nny clover rih                     
-
-I can remove rarely seen words such as the ones above, so that the frequency histogram looks less skewed. Here's the new, "dense" histograms after removing rare words.
-
-![](milestone_files/figure-html/densehist-1.png) 
-
-The histogram for the dense Twitter TDM looks like that because after removing all the rare words, we were only left with one word: "the". So we have to be careful when removing sparse terms.
-
 ### Find the most frequent words
 
-We can also pluck out the most frequent words from the dense TDM. Below, I show the words that appear at least 1000 times.
+### Frequent words from dense TDM
+
+We can also pluck out the most frequent words from the dense TDM. Below, I show the words that appear at least 1000 times in the blog text.
 
 
 ```r
@@ -311,15 +332,7 @@ snowwords
 ## pleasantly  0.20
 ```
 
-### How frequently do phrases appear? 
-
-We can find out how frequently certain phrases appear. Such phrases can be thought of as a collection of N words. These are called n-grams, for a given value of n. Two-word n-grams (e.g. "cat in") are called bigrams, three-word n-grams (e.g. "cat in the") are trigrams, etc. Using the `RWeka` package in R, I write a function `BigramTDM()` that turns a corpus into a bigram TDM.
-
-
-
-The TDMs that we created at first are _unigram_ TDMs (e.g. "cat"), so we already have that to work with. Let's also make bigram TDMs for each of the subsamples, from the cleaned corpora. We can extend that to trigrams later.
-
-
+### Bigrams
 
 We can inspect an arbitrary portion from each of the bigrams we made.
 
@@ -404,28 +417,17 @@ inspect(twit.tdm2[100:110, 1:10])  # Twitter bigram: rows 100-110, cols 1-10
 
 The above extracts of the bigram TDMs seem to look like they come from regular English text, though they do contain some typos. 
 
-### Plans for the eventual app and algorithm
+### How frequently do phrases appear? 
 
-To make the algorithm into an app, I need to reduce the size of the TDMs such that they can be stored easily on a server. I intend to shrink the TDM by replacing all rare words with "UNK", to denote an "unknown" word, which will make the TDM less sparse. I will treat "UNK" as a term to be factored into the prediction, just like all the other words in the corpus. I do not plan to correct for typos, since I assume that they will be removed during the "UNK" replacements.
-
-My plan for the algorithm is to create trigram, bigram and unigram TDMs for each corpus. 
-
-* When presented with a phrase, I will first check the trigram TDM to see what is the most likely word that comes after the final three words in the phrase. 
-
-* If I don't get any probable answer, I'll check the bigram TDM to see the most likely word that follows after the final two words in the phrase. 
-
-* And if that still doesn't give me a likely candidate, I'll just use the unigram TDM to predict the next word based on the most common single word in the corpus.
-
-* The above sequence of steps is commonly referred to as a "back off" procedure.
+We can find out how frequently certain phrases appear. Such phrases can be thought of as a collection of N words. These are called n-grams, for a given value of n. Two-word n-grams (e.g. "cat in") are called bigrams, three-word n-grams (e.g. "cat in the") are trigrams, etc. Using the `RWeka` package in R, I write a function `BigramTDM()` that turns a corpus into a bigram TDM.
 
 
-## End of report (see Appendix for code chunks)
 
-********
+The TDMs that we created at first are _unigram_ TDMs (e.g. "cat"), so we already have that to work with. Let's also make bigram TDMs for each of the subsamples, from the cleaned corpora. We can extend that to trigrams later.
 
-## Appendix
 
-### Code chunks used in report:
+
+### Other code chunks used in report:
 
 #### Download zip file
 

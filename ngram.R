@@ -143,6 +143,16 @@ if (!file.exists("./twit.train.txt")) {
               myseed, twit.sample.numlines, mytrain, "r")
 }
 
+## Import training sets. Combine into one
+if (!file.exists("./comb.train.txt")) {
+  blog.train <- readLines("./blog.train.txt")
+  news.train <- readLines("./news.train.txt")
+  twit.train <- readLines("./twit.train.txt")
+  comb.train <- c(blog.train, news.train, twit.train)
+  rm(blog.train); rm(news.train); rm(twit.train)
+  writeLines(comb.train, "./comb.train.txt")
+}
+
 ## Functions to clean up corpus
 removeURL <- function(x) {
   gsub("http.*?( |$)", "", x)
@@ -150,6 +160,7 @@ removeURL <- function(x) {
 convertSpecial <- function(x) {
   # replace any <U+0092> with single straight quote, remove all other <>
   x <- gsub("<U.0092>","'",x)  # actually unnecessary, but just in case
+  x <- gsub("'","'",x)
   gsub("<.+?>"," ",x)
 }
 myRemoveNumbers <- function(x) {
@@ -180,7 +191,7 @@ CleanCorpus <- function(x) {  # input should be a Corpus object
   x <- tm_map(x, content_transformer(removeURL))
   x <- tm_map(x, content_transformer(convertSpecial))
   x <- tm_map(x, content_transformer(myRemoveNumbers))
-  x <- tm_map(x, content_transformer(removeProfanity))
+  # x <- tm_map(x, content_transformer(removeProfanity))
   x <- tm_map(x, content_transformer(myRemovePunct))
   x <- tm_map(x, content_transformer(myDashApos))
   # x <- tm_map(x, removeWords, stopwords("english"))
@@ -189,19 +200,36 @@ CleanCorpus <- function(x) {  # input should be a Corpus object
   return(x)
 }
 
-## Import training sets. Combine into one, and clean
-if (!file.exists("./comb.train.txt")) {
-  blog.train <- readLines("./blog.train.txt")
-  news.train <- readLines("./news.train.txt")
-  twit.train <- readLines("./twit.train.txt")
-  comb.train <- c(blog.train, news.train, twit.train)
-  rm(blog.train); rm(news.train); rm(twit.train)
-  writeLines(comb.train, "./comb.train.txt")
-}
+## Clean combined training set
 comb.train <- readLines("./comb.train.txt")
 comb.corpus.raw <- Corpus(VectorSource(comb.train))
 comb.corpus <- CleanCorpus(comb.corpus.raw)
-rm(comb.train); rm(comb.corpus.raw)
+rm(comb.train)
+rm(comb.corpus.raw)
+
+## From clean corpus, make 1-gram TDM and then dataframe.
+comb.tdm1 <- TermDocumentMatrix(comb.corpus)
+n1 <- data.frame(row_sums(comb.tdm1))
+rm(comb.tdm1)
+n1$word1 <- rownames(n1)
+rownames(n1) <- NULL
+colnames(n1) <- c("freq", "word1")
+write.csv(n1, "n1.csv")
+# rm(n1)  # re-import later
+
+## Replace all words that occur only once in corpus with UNK
+singles <- subset(n1, freq==1)
+singles <- singles$word1  # char vec
+# using tm_map is extremely slow, so I convert corpus to df
+corpusdf <- data.frame(text=unlist(sapply(comb.corpus,
+                      `[`, "content")), stringsAsFactors=F)
+textvec <- corpusdf$text  # char vec
+for (s in singles) {
+  textvec <- gsub(paste0(" ",s," "), " UNK ", textvec)
+  textvec <- gsub(paste0("^",s," "), "UNK ", textvec)
+  textvec <- gsub(paste0(" ",s,"$"), " UNK", textvec)
+}
+# convert text (char vec) back to corpus
 
 ## Functions to create n-gram Tokenizer to pass on to TDM constructor
 delim <- ' \r\n\t.,;:"()?!'
@@ -228,13 +256,7 @@ QuadgramTDM <- function(x) {
   return(tdm)
 }
 
-## From clean corpus, make 1-gram TDM and then dataframe.
-comb.tdm1 <- TermDocumentMatrix(comb.corpus)
-n1 <- data.frame(dimnames(comb.tdm1)$Terms, row_sums(comb.tdm1))
-rm(comb.tdm1)
-colnames(n1) <- c("term", "count")
-rownames(n1) <- NULL
-write.csv(n1, "n1.csv"); rm(n1)  # re-import later
+
 
 comb.tdm2 <- BigramTDM(comb.corpus)
 n2 <- data.frame(dimnames(comb.tdm2)$Terms, row_sums(comb.tdm2))
