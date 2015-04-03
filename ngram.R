@@ -156,20 +156,20 @@ myRemoveNumbers <- function(x) {
   # remove any word containing numbers
   gsub("\\S*[0-9]+\\S*", " ", x)
 }
-removeProfanity <- function(x) {
-  # remove any string that contains *
-  gsub("\\S*[*]+\\S*", " ", x)
-}
+# removeProfanity <- function(x) {
+#   # remove any string that contains *
+#   gsub("\\S*[*]+\\S*", " ", x)
+# }
 myRemovePunct <- function(x) {
   # custom function to remove most punctuation
   # replace everything that isn't alphanumeric, space, ', -, *
   gsub("[^[:alnum:][:space:]'*-]", " ", x)
 }
 myDashApos <- function(x) {
-  # deal with dashes, apostrophes, asterisks within words
+  # deal with dashes, apostrophes within words
   x <- gsub("--+", " ", x)
   # preserve intra-word dashes, apostrophes, remove all else
-  gsub("(\\w['*-]\\w)|[[:punct:]]", "\\1", x)
+  gsub("(\\w['-]\\w)|[[:punct:]]", "\\1", x)
 }
 trim <- function(x) {
   # trim leading and trailing whitespace
@@ -286,15 +286,4 @@ unknowns4 <- CountUnk(n4)
 n4 <- subset(n4[2:3], count > 1)
 n4 <- rbind(n4, c("UNK", unknowns4))
 write.csv(n4, "n4.dense.csv")
-
-## Function that takes a phrase and looks for it in df
-FindPhrase <- function(x) {  # x must be string
-  words <- strsplit(x, " ")  # split string by space
-  len <- length(words)
-  last3 <- paste(words[len-2], words[len-1], words[len])
-  last2 <- paste(words[len-1], words[len])
-  last1 <- words[len]
-}
-
-
 
