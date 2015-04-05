@@ -39,7 +39,7 @@ SampleTxt <- function(infile, outfile, seed, inlines, percent, readmode) {
 datalist <- c("../final/en_US/en_US.blogs.txt",
               "../final/en_US/en_US.news.txt",
               "../final/en_US/en_US.twitter.txt")
-mypercent <- 0.1
+mypercent <- 0.02
 myseed <- 60637
 pwd <- getwd()
 setwd("../final/en_US")
@@ -52,7 +52,7 @@ if (!file.exists("./blog.sample.txt")) {
   blog.sample.numlines <- SampleTxt(datalist[1], "blog.sample.txt",
                                     myseed, blog.numlines, mypercent, "r")
 }
-if (!file.exists("./news.sample10.txt")) {
+if (!file.exists("./news.sample.txt")) {
   # must use readmode "rb" here, otherwise it breaks on a special char
   news.sample.numlines <- SampleTxt(datalist[2], "news.sample.txt",
                                     myseed, news.numlines, mypercent, "rb")
@@ -64,11 +64,11 @@ if (!file.exists("./twit.sample.txt")) {
 
 # get the number of lines in sample, using wc -l
 blog.sample.numlines <- as.numeric(gsub('[^0-9]', '',
-                                        system("wc -l blog.sample.txt", intern=TRUE)))
+                        system("wc -l blog.sample.txt", intern=TRUE)))
 news.sample.numlines <- as.numeric(gsub('[^0-9]', '',
-                                        system("wc -l news.sample.txt", intern=TRUE)))
+                        system("wc -l news.sample.txt", intern=TRUE)))
 twit.sample.numlines <- as.numeric(gsub('[^0-9]', '',
-                                        system("wc -l twit.sample.txt", intern=TRUE)))
+                        system("wc -l twit.sample.txt", intern=TRUE)))
 
 ## Function to partition subsample txt file
 PartitionTxt <- function(infile, outfiles, seed, inlines, trainpct, readmode) {
