@@ -12,16 +12,16 @@
 
 ## Load in ngrams
 if (!exists("n5")) {
-  n5 <- read.csv("w5.csv", stringsAsFactors=FALSE)
+  n5 <- read.csv("n5.csv", stringsAsFactors=FALSE)
 }
 if (!exists("n4")) {
-  n4 <- read.csv("w4.csv", stringsAsFactors=FALSE)
+  n4 <- read.csv("n4.csv", stringsAsFactors=FALSE)
 }
 if (!exists("n3")) {
-  n3 <- read.csv("w3.csv", stringsAsFactors=FALSE)
+  n3 <- read.csv("n3.csv", stringsAsFactors=FALSE)
 }
 if (!exists("n2")) {
-  n2 <- read.csv("w2.csv", stringsAsFactors=FALSE)
+  n2 <- read.csv("n2.csv", stringsAsFactors=FALSE)
 }
 
 ## Function that cleans a phrase (and removes bracketed parts)
@@ -53,8 +53,11 @@ GetLastWords <- function(x, n) {
   x <- CleanPhrase(x)   # clean x
   words <- unlist(strsplit(x, " "))  # split up string by space
   len <- length(words)
-  if (n > len || n < 1) {
-    stop("GetLastWords() error: number of words too long or < 0")
+  if (n < 1) {
+    stop("GetLastWords() error: number of words  < 0")
+  }
+  if (n > len) {
+    n <- len
   }
   if (n==1) {
     return(words[len])
@@ -66,11 +69,8 @@ GetLastWords <- function(x, n) {
     rv
   }
 }
-# test: should return "cow" "pow"
-# x <- "(I'm (not a) 5-year-old two-legged -cow-! POW (baa))"
-# GetLastWords(x, 2)
 
-## Functions to check n-gram for x. Returns df of next words and freqs.
+## Functions to check n-gram for x. Returns df of next word and freq.
 # I can't figure out how to combine all these into one -- the difficulty
 # lies in filtering the columns because I can't seem to filter by index.
 # Each fn returns df with 2 cols: [nextword] [n?freq]
@@ -151,21 +151,42 @@ CombineNgrams <- function(x, nrows) {
   rv <- subset(merge2, !is.na(nextword))
   rv <- rv[order(-rv$n5.score, -rv$n4.score, -rv$n3.score, -rv$n2.score), ]
   rv[is.na(rv)] <- 0  # replace all NAs with 0
-  return(rv)
+  return(rv)  # dataframe
 }
 # test:
-CombineNgrams("still struggling but the", 5)
+CombineNgrams("I'll be there for you, I'd live and I would", 5)
+
+SBScore <- function(x5, x4, x3, x2, alpha=0.4) {
+  score <- 0
+  if (x5 > 0) {
+    score <- x5
+  } else if (x4 >= 1) {
+    score <- x4 * alpha
+  } else if (x3 > 0) {
+    score <- x3 * alpha * alpha
+  } else if (x2 > 0) {
+    score <- x2 * alpha * alpha * alpha
+  }
+  return(round(score,1))
+}
 
 ## Implement stupid backoff algo
-StupidBackoff <- function(x, alpha=0.4, nrows, nresults) {
+StupidBackoff <- function(x, alpha=0.4, getNrows, showNresults) {
+  if (x == "") {
+    return("the")
+  }
   # alpha = 0.4 by default
-  results <- CombineNgrams(x, nrows)
-  results$overall <- (results$n5.score + (alpha * results$n4.score)
-            + ((alpha^2) * results$n3.score)
-            + ((alpha^3) * results$n2.score))
-  results <- results[order(-results$overall), ]
-  results$nextword[1:nresults]
+  df <- CombineNgrams(x, getNrows)
+  df$overall <- mapply(SBScore, df$n5.score, df$n4.score, df$n3.score, df$n2.score, alpha)
+  df <- df[order(-df$overall), ]
+  if (df$nextword[1] == "unk") {  # deal with unk
+    df <- subset(df, df$nextword != "unk")
+  }
+  if (showNresults > nrow(df)) {
+    showNresults <- nrow(df)
+  }
+  df$nextword[1:showNresults]
 }
 # test
-StupidBackoff("seen then you must be", alpha=0.4, nrows=100, nresults=10)
+StupidBackoff("I like to", 0.4, 10, 5)
 
