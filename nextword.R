@@ -1,11 +1,11 @@
 ## Predict next word based on previously computed ngram csvs
 
 ## ----------
-# This script assumes that I have CSV files containing n-grams for n=1:4.
+# This script assumes that I have CSV files containing n-grams for n=2:5.
 # The structure of the resulting dataframe should be:
-# <freq> <word1> <word2> <word3> <word4> for the 4-gram, and so on.
+# <freq> <word1> <word2> <word3> for the 3-gram, and so on.
 
-# The script takes a sentence, match the last 4/3/2/1 words of the
+# The script takes a sentence, match the last 5/4/3/2 words of the
 # sentence to the appropriate ngrams, and predicts the most likely
 # next word based on a score derived from word frequencies.
 ## ----------
@@ -44,14 +44,11 @@ CleanPhrase <- function(x) {
   x <- gsub("^\\s+|\\s+$", "", x)
   return(x)
 }
-# test: should return "i'm two-legged cow pow"
-# x <- "(I'm (not a) 5-year-old two-legged -cow-! POW (baa))"
-# CleanPhrase(x)
 
 ## Function that returns the last N words of cleaned phrase, in a char vec
 GetLastWords <- function(x, n) {
-  x <- CleanPhrase(x)   # clean x
-  words <- unlist(strsplit(x, " "))  # split up string by space
+  x <- CleanPhrase(x)
+  words <- unlist(strsplit(x, " "))
   len <- length(words)
   if (n < 1) {
     stop("GetLastWords() error: number of words  < 0")
@@ -70,11 +67,8 @@ GetLastWords <- function(x, n) {
   }
 }
 
-## Functions to check n-gram for x. Returns df of next word and freq.
-# I can't figure out how to combine all these into one -- the difficulty
-# lies in filtering the columns because I can't seem to filter by index.
-# Each fn returns df with 2 cols: [nextword] [n?freq]
-Check5Gram <- function(x, n5, nrows) {
+## Functions to check n-gram for x. Returns df with cols: [nextword] [score]
+Check5Gram <- function(x, n5, getNrows) {
   words <- GetLastWords(x, 4)
   match <- subset(n5, word1 == words[1] & word2 == words[2]
                     & word3 == words[3] & word4 == words[4])
@@ -83,12 +77,12 @@ Check5Gram <- function(x, n5, nrows) {
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
   colnames(match) <- c("nextword","n5.score")
-  if (nrow(match) < nrows) {
-    nrows <- nrow(match)
+  if (nrow(match) < getNrows) {
+    getNrows <- nrow(match)
   }
-  match[1:nrows, ]
+  match[1:getNrows, ]
 }
-Check4Gram <- function(x, n4, nrows) {  # n4 df should already exist
+Check4Gram <- function(x, n4, getNrows) {
   words <- GetLastWords(x, 3)
   match <- subset(n4, word1 == words[1] & word2 == words[2]
                     & word3 == words[3])
@@ -97,12 +91,12 @@ Check4Gram <- function(x, n4, nrows) {  # n4 df should already exist
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
   colnames(match) <- c("nextword","n4.score")
-  if (nrow(match) < nrows) {
-    nrows <- nrow(match)
+  if (nrow(match) < getNrows) {
+    getNrows <- nrow(match)
   }
-  match[1:nrows, ]
+  match[1:getNrows, ]
 }
-Check3Gram <- function(x, n3, nrows) {  # n4 df should already exist
+Check3Gram <- function(x, n3, getNrows) {
   words <- GetLastWords(x, 2)
   match <- subset(n3, word1 == words[1] & word2 == words[2])
   match <- subset(match, select=c(word3, freq))
@@ -110,12 +104,12 @@ Check3Gram <- function(x, n3, nrows) {  # n4 df should already exist
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
   colnames(match) <- c("nextword","n3.score")
-  if (nrow(match) < nrows) {
-    nrows <- nrow(match)
+  if (nrow(match) < getNrows) {
+    getNrows <- nrow(match)
   }
-  match[1:nrows, ]
+  match[1:getNrows, ]
 }
-Check2Gram <- function(x, n2, nrows) {  # n4 df should already exist
+Check2Gram <- function(x, n2, getNrows) {  # n4 df should already exist
   words <- GetLastWords(x, 1)
   match <- subset(n2, word1 == words[1])
   match <- subset(match, select=c(word2, freq))
@@ -123,40 +117,14 @@ Check2Gram <- function(x, n2, nrows) {  # n4 df should already exist
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
   colnames(match) <- c("nextword","n2.score")
-  if (nrow(match) < nrows) {
-    nrows <- nrow(match)
+  if (nrow(match) < getNrows) {
+    getNrows <- nrow(match)
   }
-  match[1:nrows, ]
+  match[1:getNrows, ]
 }
 
-# test:
-# x <- "said the cat in the"
-# m5 <- Check5Gram(x, n5, 3)
-# m4 <- Check4Gram(x, n4, 3)
-# m3 <- Check3Gram(x, n3, 5)
-# m2 <- Check2Gram(x, n2, 5)
-
-## Function that combines the nextword match into one dataframe
-# nb. function gets n5 ... n2 from parent env
-CombineNgrams <- function(x, nrows) {
-  # get dfs
-  n5.match <- Check5Gram(x, n5, nrows)
-  n4.match <- Check4Gram(x, n4, nrows)
-  n3.match <- Check3Gram(x, n3, nrows)
-  n2.match <- Check2Gram(x, n2, nrows)
-  # merge dfs, outer join (fills zeroes with NAs)
-  merge4 <- merge(n5.match, n4.match, by="nextword", all=TRUE)
-  merge3 <- merge(merge4, n3.match, by="nextword", all=TRUE)
-  merge2 <- merge(merge3, n2.match, by="nextword", all=TRUE)
-  rv <- subset(merge2, !is.na(nextword))
-  rv <- rv[order(-rv$n5.score, -rv$n4.score, -rv$n3.score, -rv$n2.score), ]
-  rv[is.na(rv)] <- 0  # replace all NAs with 0
-  return(rv)  # dataframe
-}
-# test:
-CombineNgrams("I'll be there for you, I'd live and I would", 5)
-
-SBScore <- function(x5, x4, x3, x2, alpha=0.4) {
+## Function that computes stupid backoff score
+SBScore <- function(alpha=0.4, x5, x4, x3, x2) {
   score <- 0
   if (x5 > 0) {
     score <- x5
@@ -170,23 +138,61 @@ SBScore <- function(x5, x4, x3, x2, alpha=0.4) {
   return(round(score,1))
 }
 
+## Function that combines the nextword matches into one dataframe
+ScoreNgrams <- function(x, nrows=20) {
+  # get dfs from parent env
+  n5.match <- Check5Gram(x, n5, nrows)
+  n4.match <- Check4Gram(x, n4, nrows)
+  n3.match <- Check3Gram(x, n3, nrows)
+  n2.match <- Check2Gram(x, n2, nrows)
+  # merge dfs, by outer join (fills zeroes with NAs)
+  merge5n4 <- merge(n5.match, n4.match, by="nextword", all=TRUE)
+  merge4n3 <- merge(merge5n4, n3.match, by="nextword", all=TRUE)
+  merge3n2 <- merge(merge4n3, n2.match, by="nextword", all=TRUE)
+  df <- subset(merge3n2, !is.na(nextword))  # rm any zero-match results
+  if (nrow(df) > 0) {
+    df <- df[order(-df$n5.score, -df$n4.score, -df$n3.score, -df$n2.score), ]
+    df[is.na(df)] <- 0  # replace all NAs with 0
+    # add in scores
+    df$overall <- mapply(SBScore, alpha=0.4, df$n5.score, df$n4.score,
+                         df$n3.score, df$n2.score)
+    df <- df[order(-df$overall), ]
+  }
+  return(df)  # dataframe
+}
+
+if (!exists("profanities")) {
+  profanities <- readLines("profanity.txt", encoding="UTF-8")
+}
+
 ## Implement stupid backoff algo
-StupidBackoff <- function(x, alpha=0.4, getNrows, showNresults) {
+StupidBackoff <- function(x, alpha=0.4, getNrows=20, showNresults=1,
+                          removeProfanity=TRUE) {
+  nextword <- ""
   if (x == "") {
     return("the")
   }
-  # alpha = 0.4 by default
-  df <- CombineNgrams(x, getNrows)
-  df$overall <- mapply(SBScore, df$n5.score, df$n4.score, df$n3.score, df$n2.score, alpha)
-  df <- df[order(-df$overall), ]
-  if (df$nextword[1] == "unk") {  # deal with unk
-    df <- subset(df, df$nextword != "unk")
+  df <- ScoreNgrams(x, getNrows)
+  if (nrow(df) == 0) {
+    return("and")
   }
+  df <- df[df$nextword != "unk", ]  # remove unk
   if (showNresults > nrow(df)) {
     showNresults <- nrow(df)
   }
-  df$nextword[1:showNresults]
+  if (showNresults == 1) {
+    # check if top overall score is shared by multiple candidates
+    topwords <- df[df$overall == max(df$overall), ]$nextword
+    # if multiple candidates, randomly select one
+    nextword <- sample(topwords, 1)
+  } else {
+    nextword <- df$nextword[1:showNresults]
+  }
+  if (removeProfanity) {
+    if (nextword %in% profanities) {
+      nextword <- "#@?!"
+    }
+  }
+  return(nextword)
 }
-# test
-StupidBackoff("I like to", 0.4, 10, 5)
 
