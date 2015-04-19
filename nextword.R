@@ -67,7 +67,7 @@ GetLastWords <- function(x, n) {
   }
 }
 
-## Functions to check n-gram for x. Returns df with cols: [nextword] [score]
+## Functions to check n-gram for x. Returns df with cols: [nextword] [MLE]
 Check5Gram <- function(x, n5, getNrows) {
   words <- GetLastWords(x, 4)
   match <- subset(n5, word1 == words[1] & word2 == words[2]
@@ -76,7 +76,7 @@ Check5Gram <- function(x, n5, getNrows) {
   match <- match[order(-match$freq), ]
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
-  colnames(match) <- c("nextword","n5.score")
+  colnames(match) <- c("nextword","n5.MLE")
   if (nrow(match) < getNrows) {
     getNrows <- nrow(match)
   }
@@ -90,7 +90,7 @@ Check4Gram <- function(x, n4, getNrows) {
   match <- match[order(-match$freq), ]
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
-  colnames(match) <- c("nextword","n4.score")
+  colnames(match) <- c("nextword","n4.MLE")
   if (nrow(match) < getNrows) {
     getNrows <- nrow(match)
   }
@@ -103,7 +103,7 @@ Check3Gram <- function(x, n3, getNrows) {
   match <- match[order(-match$freq), ]
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
-  colnames(match) <- c("nextword","n3.score")
+  colnames(match) <- c("nextword","n3.MLE")
   if (nrow(match) < getNrows) {
     getNrows <- nrow(match)
   }
@@ -116,7 +116,7 @@ Check2Gram <- function(x, n2, getNrows) {  # n4 df should already exist
   match <- match[order(-match$freq), ]
   sumfreq <- sum(match$freq)
   match$freq <- round(match$freq / sumfreq * 100)
-  colnames(match) <- c("nextword","n2.score")
+  colnames(match) <- c("nextword","n2.MLE")
   if (nrow(match) < getNrows) {
     getNrows <- nrow(match)
   }
@@ -151,12 +151,12 @@ ScoreNgrams <- function(x, nrows=20) {
   merge3n2 <- merge(merge4n3, n2.match, by="nextword", all=TRUE)
   df <- subset(merge3n2, !is.na(nextword))  # rm any zero-match results
   if (nrow(df) > 0) {
-    df <- df[order(-df$n5.score, -df$n4.score, -df$n3.score, -df$n2.score), ]
+    df <- df[order(-df$n5.MLE, -df$n4.MLE, -df$n3.MLE, -df$n2.MLE), ]
     df[is.na(df)] <- 0  # replace all NAs with 0
     # add in scores
-    df$overall <- mapply(SBScore, alpha=0.4, df$n5.score, df$n4.score,
-                         df$n3.score, df$n2.score)
-    df <- df[order(-df$overall), ]
+    df$score <- mapply(SBScore, alpha=0.4, df$n5.MLE, df$n4.MLE,
+                         df$n3.MLE, df$n2.MLE)
+    df <- df[order(-df$score), ]
   }
   return(df)  # dataframe
 }
@@ -182,7 +182,7 @@ StupidBackoff <- function(x, alpha=0.4, getNrows=20, showNresults=1,
   }
   if (showNresults == 1) {
     # check if top overall score is shared by multiple candidates
-    topwords <- df[df$overall == max(df$overall), ]$nextword
+    topwords <- df[df$score == max(df$score), ]$nextword
     # if multiple candidates, randomly select one
     nextword <- sample(topwords, 1)
   } else {

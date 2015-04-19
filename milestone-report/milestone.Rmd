@@ -1,0 +1,543 @@
+---
+title: "Swiftkey capstone milestone report"
+author: "Melissa Tan"
+date: "Sunday, March 22, 2015"
+output:
+  html_document:
+    keep_md: yes
+    theme: united
+    highlight: tango
+  pdf_document: default  
+---
+
+```{r setoptions, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(knitr)
+opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
+```
+
+## Executive summary 
+
+This is a milestone report for a data science capstone project that involves next-word prediction. The goal for the overall project is to write an algorithm that uses n-grams (more on that later) to predict the next word that will appear after a given phrase. For example, "_the cat in the_" might be followed by "_hat_". The algorithm will eventually be made into an app. 
+
+In this report, I perform exploratory analysis of 3 texts -- from blogs, news sites, and Twitter -- that were collected from the web. I'll be using these 3 texts later on to build my word prediction algorithm.
+
+In each of the 3 texts, the average sentence length differed. It was shortest for Twitter, due to Twitter's character limit, and longest for blogs.  
+Also, there was a huge number of words that appeared only once. The most common words were the usual suspects, such as "and" and "the".
+
+Note: To keep the report brief and concise, I've put my R code in the Appendix, except where it can't be avoided. I've also tried to explain any technical terms used to non-data scientists.
+
+## Download the datasets
+
+The dataset must be downloaded from a [link given in the course website](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip). Get the file and unzip. 
+
+```{r unzip, echo=FALSE}
+if (!file.exists("../final")) {  # unzip into parent directory
+  fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+  download.file(fileUrl, destfile = "../swiftkey.zip")
+  unzip("../swiftkey.zip")
+}
+```
+
+The unzipped file contains a directory called `final`, then a subdirectory called `en_US`, which contains the texts that I will analyze. 
+
+There are 3 text files.        
+* `en_US.blogs.txt` - text from blog posts        
+* `en_US.news.txt` - text from news articles posted online        
+* `en_US.twitter.txt` - tweets on Twitter        
+
+## Basic summary of the text files
+
+Word and line count for each of the three datasets: 
+
+```{r wc_summary, echo=FALSE}
+orig.wd <- getwd()
+setwd("../final/en_US")
+numwords <- system("wc -w *.txt", intern=TRUE)  # intern=TRUE to return output  
+numlines <- system("wc -l *.txt", intern=TRUE)
+longest <- system("wc -L *.txt", intern=TRUE)
+setwd(orig.wd)  # return to original working dir, ie. the parent of /final
+
+# number of words for each dataset
+blog.numwords <- as.numeric(gsub('[^0-9]', '', numwords[1]))
+news.numwords <- as.numeric(gsub('[^0-9]', '', numwords[2]))
+twit.numwords <- as.numeric(gsub('[^0-9]', '', numwords[3]))
+# number of lines for each dataset
+blog.numlines <- as.numeric(gsub('[^0-9]', '', numlines[1]))
+news.numlines <- as.numeric(gsub('[^0-9]', '', numlines[2]))
+twit.numlines <- as.numeric(gsub('[^0-9]', '', numlines[3]))
+# length of longest line for each dataset
+blog.longest  <- as.numeric(gsub('[^0-9]', '', longest[1]))
+news.longest  <- as.numeric(gsub('[^0-9]', '', longest[2]))
+twit.longest  <- as.numeric(gsub('[^0-9]', '', longest[3]))
+
+# create and display summary table
+blog.stats <- c(blog.numwords, blog.numlines, blog.longest,
+                round(blog.numwords/blog.numlines))
+news.stats <- c(news.numwords, news.numlines, news.longest,
+                round(news.numwords/news.numlines))
+twit.stats <- c(twit.numwords, twit.numlines, twit.longest, 
+                round(twit.numwords/twit.numlines))  
+data.stats <- data.frame(rbind(blog.stats, news.stats, twit.stats))
+names(data.stats) <- c("Total word count", 
+                       "Total line count", 
+                       "No. of characters in longest line",
+                       "Average words per line")
+kable(data.stats)  # display the above in table format
+```
+
+The Twitter one looks off, since we know that tweets have a max length of 140 characters. Looking through the data, I found that the character count is distorted because of special characters. I will remove them later.
+
+## Extract a random subsample of each text
+
+Since the datasets are too large for my laptop RAM, I wrote a function `SampleTxt()` that extracts a random subsample from each of the source texts. The function essentially flips a coin to decide whether to copy a particular line from the source text to the subsample. At the end, I save each subsample in a `.txt` file in my current working directory, so that I don't have to keep re-generating it.
+
+```{r fn_sample, echo=FALSE}
+## Function to create subsample of txt file 
+SampleTxt <- function(infile, outfile, seed, inlines, percent, readmode) {
+  conn.in <- file(infile, readmode)  # readmode = "r" or "rb"
+  conn.out <- file(outfile,"w")  
+  # for each line, flip a coin to decide whether to put it in sample
+  set.seed(seed)
+  in.sample <- rbinom(n=inlines, size=1, prob=percent)
+  i <- 0
+  for (i in 1:(inlines+1)) {
+    # read in one line at a time
+    currLine <- readLines(conn.in, n=1, encoding="UTF-8", skipNul=TRUE) 
+    # if reached end of file, close all conns
+    if (length(currLine) == 0) {  
+      close(conn.out)  
+      close(conn.in)
+      return()  
+    }  
+    # while not end of file, write out the selected line to file
+    if (in.sample[i] == 1) {
+      writeLines(currLine, conn.out)
+      num.out <- num.out + 1
+    }
+  }
+}
+```
+
+Since there are so many lines, and my laptop RAM is limited, I reckon it's good enough for now to extract about 2% of the lines from the original source text into each randomized subsample. 
+
+```{r mk_sample, echo=FALSE}
+datalist <- c("../final/en_US/en_US.blogs.txt",
+              "../final/en_US/en_US.news.txt",
+              "../final/en_US/en_US.twitter.txt")
+mypercent <- 0.02
+myseed <- 60637
+if (!file.exists("./blog.sample.txt")) {
+  SampleTxt(datalist[1], "blog.sample.txt", myseed, blog.numlines, mypercent, "r")
+}
+if (!file.exists("./news.sample.txt")) {
+  # must use readmode "rb" here, otherwise it breaks on a special char
+  SampleTxt(datalist[2], "news.sample.txt", myseed, news.numlines, mypercent, "rb")
+}
+if (!file.exists("./twit.sample.txt")) {
+  SampleTxt(datalist[3], "twit.sample.txt", myseed, twit.numlines, mypercent, "r")
+}
+```
+
+File names for the 3 subsamples I made, each containing `r mypercent * 100`% of lines in original text:       
+* `blog.sample.txt`      
+* `news.sample.txt`        
+* `twit.sample.txt`        
+
+## Basic summary of subsample
+
+Count words and lines in subsamples to see how they compare with the source text. Although the subsamples have markedly fewer words and lines, the average words per line for each text are roughly similar.
+
+```{r wc_sample, echo=FALSE}
+sample.numwords <- system("wc -w *.sample.txt", intern=TRUE)  
+sample.numlines <- system("wc -l *.sample.txt", intern=TRUE)
+sample.longest <- system("wc -L *.sample.txt", intern=TRUE)
+
+# number of words for each dataset
+blog.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[1]))
+news.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[2]))
+twit.sample.numwords <- as.numeric(gsub('[^0-9]', '', sample.numwords[3]))
+# number of lines for each dataset
+blog.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[1]))
+news.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[2]))
+twit.sample.numlines <- as.numeric(gsub('[^0-9]', '', sample.numlines[3]))
+# length of longest line for each dataset
+blog.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[1]))
+news.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[2]))
+twit.sample.longest  <- as.numeric(gsub('[^0-9]', '',  sample.longest[3]))
+
+# create and display summary table
+blog.sample.stats <- c(blog.sample.numwords, blog.sample.numlines, blog.sample.longest,
+                      round(blog.sample.numwords/blog.sample.numlines))
+news.sample.stats <- c(news.sample.numwords, news.sample.numlines, news.sample.longest,
+                      round(news.sample.numwords/news.sample.numlines))
+twit.sample.stats <- c(twit.sample.numwords, twit.sample.numlines, twit.sample.longest,
+                      round(twit.sample.numwords/twit.sample.numlines))  
+sample.stats <- data.frame(rbind(blog.sample.stats, 
+                                 news.sample.stats, 
+                                 twit.sample.stats))
+names(sample.stats) <- c("Sample word count", 
+                       "Sample line count", 
+                       "No. of characters in longest line", 
+                       "Avg words per line")
+kable(sample.stats)  # display the above in table format
+```
+
+The importing process altered the encoding for special characters, and thus the line length for Twitter text has gotten even more distorted. I will remove the offending special characters in the next step.
+
+## Clean up the subsample text
+
+```{r read_sample, echo=FALSE}
+blog.mini <- readLines("./blog.sample.txt")  # imports txt as character vector
+news.mini <- readLines("./news.sample.txt")
+twit.mini <- readLines("./twit.sample.txt")
+```
+
+R has a text mining package called `tm`, which can turn the text into a special object in R called a "corpus", for easier analysis and navigation. We do not need to go into details about this right now, but there is more discussion in the Appendix if you are interested.
+
+```{r mk_corpus, echo=FALSE} 
+library(tm)
+# build a corpus, from a character vector
+blog.corpus.raw <- Corpus(VectorSource(blog.mini))
+news.corpus.raw <- Corpus(VectorSource(news.mini))
+twit.corpus.raw <- Corpus(VectorSource(twit.mini))
+```
+
+First, I turn each of the 3 subsamples into a corpus. Next, I will clean up the three corpora (plural of "corpus") using a function I wrote, `CleanCorpus()`, which performs the following steps:
+
+1. Convert text to lowercase
+
+2. Remove URLs by deleting every string of characters that starts with "http". Also remove all strings that are enclosed within `< >` -- these tend to denote special characters such as emojis.
+
+3. Remove all words containing numbers, e.g. "007", "1st", "b2c", "d20", "24/7". Unfortunately, this means that even legit phrases like "19-year-old" will be deleted as well. I haven't found a way around this issue.
+
+4. Convert all smart quotes, e.g. `'`, to straight quotes e.g. `'`. (The difference may not be obvious depending on what font you are viewing this in, but there is a difference.)
+
+5. Handle punctuation: there's a standard `removePunctuation()` function in the `tm` package, which removes everything found in the `[:punct:]` POSIX class, including hyphens and apostrophes. However, I still want to keep some intra-word punctuation marks, e.g. `mother-in-law`, `isn't`. So I wrote my own functions to remove all punctuation except `-`, `'`, and `*`.
+
+6. Keep intra-word hyphens, and remove other hyphens and dashes. e.g. `my mother-in-law visited--i was absolutely -thrilled-!` gets converted to `my mother-in-law visited i was absolutely thrilled!` 
+
+7. Keep intra-word apostrophes, to distinguish between words such as `its` and `it's`. I would like to keep leading apostrophes e.g. `'Twas` too, but sadly I can't do that because I can't figure out to distinguish between those and the start of a sentence. So my code will leave `can't` unchanged, but will turn `'hello world'` into `hello world`, and similarly will turn `'twas` into `twas`. 
+
+8. Intra-word asterisks: These are often used when people are swearing. Keep them for now, but later in the prediction algorithm I'll remove profanity from the output. Remove all other asterisks.
+
+9. Compress extra whitespace
+
+10. Trim leading and trailing whitespace.
+
+```{r fn_clean, echo=FALSE}
+CleanCorpus <- function(my.corpus) {  # input should be a Corpus object
+  # 1. convert text to lowercase
+  my.corpus <- tm_map(my.corpus, content_transformer(tolower))
+  # 2. remove URLs within string and at end of string
+  removeURL <- function(x) {
+    x <- gsub("http.*?( |$)", "", x)
+    gsub("<.+?>"," ",x)
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(removeURL))
+  # 3. remove any word containing numbers
+  myRemoveNumbers <- function(x) {
+    gsub("\\S*[0-9]+\\S*", " ", x)
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(myRemoveNumbers))
+  # 4. convert smart single quotes to straight single quotes
+  mySingleQuote <- function(x) {
+    gsub("[\x82\x91\x92]", "'", x)  # ANSI version, not Unicode version
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(mySingleQuote))
+  # 5. custom function to remove most punctuation
+  myRemovePunctuation <- function(x) {
+    # replace everything that isn't alphanumeric, space, ', -, *
+    gsub("[^[:alnum:][:space:]'-*]", " ", x)
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(myRemovePunctuation))
+  # 6. deal with dashes, apostrophes, asterisks within words
+  myDashApos <- function(x) {
+    x <- gsub("--+", " ", x)
+    gsub("(\\w['-*]\\w)|[[:punct:]]", "\\1", x, perl=TRUE)    
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(myDashApos))
+
+  # remove stopwords - optional
+  # my.corpus <- tm_map(my.corpus, removeWords, stopwords("english"))
+  
+  # 7. strip extra whitespace
+  my.corpus <- tm_map(my.corpus, content_transformer(stripWhitespace))
+  # 8. trim leading and trailing whitespace
+  trim <- function(x) {
+    gsub("^\\s+|\\s+$", "", x)
+  }
+  my.corpus <- tm_map(my.corpus, content_transformer(trim))
+  return(my.corpus)
+}
+
+# Clean corpus
+blog.corpus <- CleanCorpus(blog.corpus.raw)  
+news.corpus <- CleanCorpus(news.corpus.raw)
+twit.corpus <- CleanCorpus(twit.corpus.raw)
+```
+
+## Visualize word frequency
+
+```{r mk_tdm, echo=FALSE}
+blog.tdm <- TermDocumentMatrix(blog.corpus)
+news.tdm <- TermDocumentMatrix(news.corpus)
+twit.tdm <- TermDocumentMatrix(twit.corpus)
+```
+
+### Frequency counts and histogram
+
+Make a histogram of the word frequency counts. 
+
+```{r freqhist, echo=FALSE}
+library(slam)
+blog.freq <- row_sums(blog.tdm, na.rm=TRUE)
+news.freq <- row_sums(news.tdm, na.rm=TRUE)
+twit.freq <- row_sums(twit.tdm, na.rm=TRUE)
+par(mfrow=c(1,3))  # fit graphs into 1 row, 3 cols
+hist(blog.freq)
+hist(news.freq)
+hist(twit.freq)
+```
+
+Clearly, in all three cases, there are truckloads of words that only appear once. We can count how many of these there are, and display some random examples.
+
+```{r tbl_once, echo=FALSE}
+blog.once <- findFreqTerms(blog.tdm, lowfreq=0, highfreq=1)
+news.once <- findFreqTerms(news.tdm, lowfreq=0, highfreq=1)
+twit.once <- findFreqTerms(twit.tdm, lowfreq=0, highfreq=1)
+# get number of terms that appear at most one time
+num.once <- c(length(blog.once), length(news.once), length(twit.once))
+# randomly sample 3 of these words from each TDM
+set.seed(773)      
+ex.once <- c(paste(sample(blog.once, 3), collapse=" "), 
+             paste(sample(news.once, 3), collapse=" "),
+             paste(sample(twit.once, 3), collapse=" "))
+df.once <- data.frame(cbind(num.once, ex.once))
+colnames(df.once) <- c("No. of words that appear only once", 
+                        "Examples of such words in the text")
+rownames(df.once) <- c("blog", "news", "Twitter")
+kable(df.once)
+```
+
+I can remove rarely seen words such as the ones above, so that the frequency histogram looks less skewed. Here's the new, "dense" histograms after removing rare words.
+
+```{r densehist, echo=FALSE}
+max.empty <- 0.8  # set max empty space (zeroes) at 80% of matrix
+blog.tdm.dense <- removeSparseTerms(blog.tdm, max.empty)
+news.tdm.dense <- removeSparseTerms(news.tdm, max.empty)
+twit.tdm.dense <- removeSparseTerms(twit.tdm, max.empty)
+# make new frequency hists
+blog.freq.dense <- row_sums(blog.tdm.dense, na.rm=TRUE)
+# rowSums(as.matrix(blog.tdm.dense, na.rm=TRUE))
+news.freq.dense <- row_sums(news.tdm.dense, na.rm=TRUE)
+twit.freq.dense <- row_sums(twit.tdm.dense, na.rm=TRUE)
+par(mfrow=c(1,3))  # fit graphs into 1 row, 3 cols
+hist(blog.freq.dense)
+hist(news.freq.dense)
+hist(twit.freq.dense)
+```
+
+The histogram for the dense Twitter TDM looks like that because after removing all the rare words, we were only left with one word: "the". So we have to be careful when removing sparse terms.
+
+### Plans for the eventual app and algorithm
+
+To make the algorithm into an app, I need to reduce the size of the data such that they can be stored easily on a server. I intend to shrink the TDM by replacing all rare words with "UNK", to denote an "unknown" word, which will make the TDM less sparse. I will treat "UNK" as a term to be factored into the prediction, just like all the other words in the corpus. I do not plan to correct for typos, since I assume that they will be removed during the "UNK" replacements.
+
+My plan for the algorithm is to create trigram, bigram and unigram TDMs for each corpus. 
+
+* When presented with a phrase, I will first check the trigram TDM to see what is the most likely word that comes after the final three words in the phrase. 
+
+* If I don't get any probable answer, I'll check the bigram TDM to see the most likely word that follows after the final two words in the phrase. 
+
+* And if that still doesn't give me a likely candidate, I'll just use the unigram TDM to predict the next word based on the most common single word in the corpus.
+
+* The above sequence of steps is commonly referred to as a "back off" procedure.
+
+## End of report (see Appendix for code chunks)
+
+********
+
+## Appendix
+
+After all the cleaning, the sample lines look different. Compare the raw versions and cleaned versions, by printing out a sample line from each corpus before and after. I've arbitrarily chosen the 7th line.
+
+```{r inspect_corpus} 
+k <- 7  # display 7th line of corpus
+inspect(blog.corpus.raw[k])  # before cleaning
+inspect(blog.corpus[k])      # after cleaning
+inspect(news.corpus.raw[k])  # before cleaning
+inspect(news.corpus[k])      # after cleaning
+inspect(twit.corpus.raw[k])  # before cleaning
+inspect(twit.corpus[k])      # after cleaning
+```
+
+### Navigating a TDM
+
+To find word frequencies, we can use the `tm` package. The very first thing we need to do is turn the corpus into something called a "term-document matrix" (TDM for short). A TDM is basically a matrix that displays the frequency of words found in a collection of documents (source: [Wikipedia](http://en.wikipedia.org/wiki/Document-term_matrix)). The rows correspond to each word, and the columns correspond to each document. (A document-term matrix has it the other way round, and is simply the transpose of the TDM.) 
+
+For our TDM, note that each line in the blog, news, and Twitter subsamples is considered one document by itself. 
+
+When talking about TDMs, there is an important indicator called "sparsity", which essentially gauges how many zeroes there are in the matrix. A sparse matrix is a matrix with a high percentage of zeroes. The subsample TDMs have extremely high sparsity, at nearly 100%.
+
+To illustrate how to navigate a term-document matrix, let's look at an example. Let's search for the word "winter" in the blog subsample text, plus the next 4 words alphabetically. And let's restrict this to the first 10 lines. We see that in the first 10 lines of the blog subsample text, it's all zeroes, meaning that there are no mentions of "winter" at all.
+
+```{r winter, echo=FALSE}
+i <- which(dimnames(blog.tdm)$Terms == "winter")
+inspect(blog.tdm[i+(0:5), 1:10])
+```
+
+For a much more common word, "and", the situation is different. Again, let's look in the blog subsample. The 3rd line of the text (see 3rd column) contains 8 "and"s, the 4th line contains 3 "and"s, and so on.
+
+```{r and, echo=FALSE}
+i <- which(dimnames(blog.tdm)$Terms == "and")
+inspect(blog.tdm[i+(0:5), 1:10])
+```
+
+We can see that the word "and" does appear several times within the first 10 lines of the blog subsample text.
+### Find the most frequent words
+
+### Frequent words from dense TDM
+
+We can also pluck out the most frequent words from the dense TDM. Below, I show the words that appear at least 1000 times in the blog text.
+
+```{r freqterm}
+findFreqTerms(blog.tdm.dense, lowfreq=1000, highfreq=Inf)  # frequent words in blogs
+findFreqTerms(news.tdm.dense, lowfreq=1000, highfreq=Inf)  # frequent words in news articles
+findFreqTerms(twit.tdm.dense, lowfreq=1000, highfreq=Inf)  # frequent words in tweets
+```
+
+As expected, these are very common words. If we want to, it's possible to remove common words from the corpus. I haven't done that because it may hinder the next-word prediction algorithm.
+
+### Word associations
+
+We can find out which words are associated with which in the original TDM. Example: "snow". (I'm looking in the original TDM because I tried to look for this word in the dense TDM and got 0 results.)
+
+```{r assoc}
+snowwords <- findAssocs(blog.tdm, "snow", 0.2)  # min correlation = 0.2
+snowwords
+```
+
+### Bigrams
+
+We can inspect an arbitrary portion from each of the bigrams we made.
+
+```{r inspect_ngram}
+inspect(blog.tdm2[100:110, 1:10])  # blog bigram: rows 100-110, cols 1-10
+inspect(news.tdm2[100:110, 1:10])  # news bigram: rows 100-110, cols 1-10
+inspect(twit.tdm2[100:110, 1:10])  # Twitter bigram: rows 100-110, cols 1-10
+```
+
+The above extracts of the bigram TDMs seem to look like they come from regular English text, though they do contain some typos. 
+
+### How frequently do phrases appear? 
+
+We can find out how frequently certain phrases appear. Such phrases can be thought of as a collection of N words. These are called n-grams, for a given value of n. Two-word n-grams (e.g. "cat in") are called bigrams, three-word n-grams (e.g. "cat in the") are trigrams, etc. Using the `RWeka` package in R, I write a function `BigramTDM()` that turns a corpus into a bigram TDM.
+
+```{r fn_ngram, echo=FALSE}
+library(RWeka)
+
+# functions to create n-gram Tokenizer to pass on to TDM constructor
+BigramTokenizer <- function(x) {
+  NGramTokenizer(x, Weka_control(min=2, max=2))
+}
+TrigramTokenizer <- function(x) {
+  NGramTokenizer(x, Weka_control(min=3, max=3))
+}
+
+# functions to construct n-gram TDM
+BigramTDM <- function(x) { 
+  tdm <- TermDocumentMatrix(x, control=list(tokenize=BigramTokenizer))
+  return(tdm)
+}
+TrigramTDM <- function(x) { 
+  tdm <- TermDocumentMatrix(x, control=list(tokenize=TrigramTokenizer))
+  return(tdm)
+}
+```
+
+The TDMs that we created at first are _unigram_ TDMs (e.g. "cat"), so we already have that to work with. Let's also make bigram TDMs for each of the subsamples, from the cleaned corpora. We can extend that to trigrams later.
+
+```{r mk_ngram, echo=FALSE}
+# blog bigram, trigram
+blog.tdm2 <- BigramTDM(blog.corpus)
+# blog.tdm3 <- TrigramTDM(blog.corpus)
+
+# news bigram, trigram
+news.tdm2 <- BigramTDM(news.corpus)
+# news.tdm3 <- TrigramTDM(news.corpus)
+
+# twitter bigram, trigram
+twit.tdm2 <- BigramTDM(twit.corpus)
+# twit.tdm3 <- TrigramTDM(twit.corpus)
+```
+
+### Other code chunks used in report:
+
+#### Download zip file
+```{r unzip, eval=FALSE}
+```
+
+#### Word and line counts for datasets
+```{r wc_summary, eval=FALSE}
+```
+
+#### Read in the subsamples into R
+```{r read_sample, eval=FALSE}
+```
+
+#### Function to extract subsamples from source text
+```{r fn_sample, eval=FALSE}
+```
+
+#### Extract subsamples from source text
+```{r mk_sample, eval=FALSE}
+```
+
+#### Display word and line summary for subsamples
+```{r wc_sample, eval=FALSE}
+```
+
+#### Turn the subsample text into corpus object
+```{r mk_corpus, eval=FALSE}
+```
+
+#### Function to clean corpus, and perform the cleaning
+```{r fn_clean, eval=FALSE}
+```
+
+#### Create term-document matrix (TDM)
+```{r mk_tdm, eval=FALSE}
+```
+
+#### Look for "winter" in blog TDM
+```{r winter, eval=FALSE}
+```
+
+#### Look for "and" in blog TDM
+```{r and, eval=FALSE}
+```
+
+#### Make frequency histogram before removing sparse terms
+
+(Since my TDM is so sparse and large, I got an error when I tried to count words using `rowSums(as.matrix(TDM))`. To get around that, I use the `row_sums()` function from the `slam` package, which can count the row sums for large, sparse arrays.)
+
+```{r freqhist, eval=FALSE}
+```
+
+#### Make table of words that appear only once
+```{r tbl_once, eval=FALSE}
+```
+
+#### Make frequency histogram after removing sparse terms 
+```{r densehist, eval=FALSE}
+```
+
+####  Create tokenizers to make n-gram TDMs
+```{r fn_ngram, eval=FALSE}
+```
+
+#### Make n-gram
+```{r mk_ngram, eval=FALSE}
+```
+
+End of appendix
