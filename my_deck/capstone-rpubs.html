@@ -1220,17 +1220,11 @@ also the Maximum Likelihood Estimate (MLE), in this case.</p>
 <p>User input: <code>&quot;The CAT, in the ?&quot;</code>. What the algo does is:</p>
 
 <ul>
-<li><p>Cleans up the input, turning it into: <code>&quot;the cat in the&quot;</code>.</p></li>
-<li><p>Check 5-gram for all occurrences of <code>the cat in the *</code>, where * denotes
-any word. Similarly, check 4-gram for <code>cat in the *</code>,
-check 3-gram for <code>in the *</code>,
-check 2-gram for <code>the *</code>. Make a list of all the <code>*</code> words.</p></li>
-<li><p>For each word, find its maximum likelihood estimate (MLE) in the
-corresponding n-gram,
-compute overall score (set \( \alpha \) = <code>0.4</code>), and produce a score table.
-Below are
-the first 3 rows of an example score table, which show that <code>hat</code>
-followed 100% of the <code>the cat in the</code> instances in the 5-gram.</p></li>
+<li><p>Cleans up and standardizes the input, turning it into: <code>&quot;the cat in the&quot;</code>.</p></li>
+<li><p>Check 5-gram data for all occurrences of <code>the cat in the *</code>, where * denotes
+any word. Similarly, check 4-gram data for <code>cat in the *</code>, check 3-gram data for <code>in the *</code>, check 2-gram data for <code>the *</code>. Make a list of all the <code>*</code> candidate words.</p></li>
+<li><p>For each word, find maximum likelihood estimate (MLE) in the
+corresponding n-gram, compute overall score (set \( \alpha \) = <code>0.4</code>), and produce a score table. Below are the first 3 rows of an example score table, which show that <code>hat</code> followed 100% of the <code>the cat in the</code> instances in the 5-gram.</p></li>
 </ul>
 
 <table><thead>
@@ -1270,7 +1264,7 @@ followed 100% of the <code>the cat in the</code> instances in the 5-gram.</p></l
 </tbody></table>
 
 <ul>
-<li><p>Remove any <code>unk</code> rows. I had used <code>unk</code> as a placeholder for singleton words.</p></li>
+<li><p>Remove any <code>unk</code> rows. (since <code>unk</code> was  a placeholder for words that only appeared once)</p></li>
 <li><p>Output the word with the top score. If there are multiple
 words with the same top score, randomly pick one. If user turns on
 <em>safe mode</em> and the output word is a profanity, censor the output.</p></li>

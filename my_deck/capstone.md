@@ -68,19 +68,13 @@ Algorithm walk-through example
 
 User input: `"The CAT, in the ?"`. What the algo does is:
 
-* Cleans up the input, turning it into: `"the cat in the"`.
+* Cleans up and standardizes the input, turning it into: `"the cat in the"`.
 
-* Check 5-gram for all occurrences of `the cat in the *`, where * denotes
-any word. Similarly, check 4-gram for `cat in the *`,
-check 3-gram for `in the *`,
-check 2-gram for `the *`. Make a list of all the `*` words.
+* Check 5-gram data for all occurrences of `the cat in the *`, where * denotes
+any word. Similarly, check 4-gram data for `cat in the *`, check 3-gram data for `in the *`, check 2-gram data for `the *`. Make a list of all the `*` candidate words.
 
-* For each word, find its maximum likelihood estimate (MLE) in the
-corresponding n-gram,
-compute overall score (set $\alpha$ = `0.4`), and produce a score table.
-Below are
-the first 3 rows of an example score table, which show that `hat`
-followed 100% of the `the cat in the` instances in the 5-gram.
+* For each word, find maximum likelihood estimate (MLE) in the
+corresponding n-gram, compute overall score (set $\alpha$ = `0.4`), and produce a score table. Below are the first 3 rows of an example score table, which show that `hat` followed 100% of the `the cat in the` instances in the 5-gram.
 
 
 |nextword | n5.MLE| n4.MLE| n3.MLE| n2.MLE| score|
@@ -89,7 +83,7 @@ followed 100% of the `the cat in the` instances in the 5-gram.
 |unk      |      0|      0|      3|      4|   0.5|
 |first    |      0|      0|      2|      1|   0.3|
 
-* Remove any `unk` rows. I had used `unk` as a placeholder for singleton words.
+* Remove any `unk` rows. (since `unk` was  a placeholder for words that only appeared once)
 
 * Output the word with the top score. If there are multiple
 words with the same top score, randomly pick one. If user turns on
