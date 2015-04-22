@@ -16,7 +16,7 @@ shinyUI(fluidPage(
 
         tabsetPanel(type = "tabs",
           tabPanel("Classic",
-            "This text box wants to be your friend! Go on, write something:",
+            "This text box wants to be your friend! Write something and tap the button:",
             textInput("phrase", label = "", value = ""),
             tags$head(tags$style(type="text/css", "#phrase {width: 600px;}")),
 
@@ -34,7 +34,7 @@ shinyUI(fluidPage(
 
           ),
           tabPanel("Instant",
-            "This text box wants to be your friend! Go on, write something:",
+            "This text box wants to be your friend! Just start writing and we'll do the rest:",
             textInput("phrase2", label = "", value = ""),
             tags$head(tags$style(type="text/css", "#phrase2 {width: 600px;}")),
 
@@ -63,7 +63,7 @@ shinyUI(fluidPage(
 
              p("To get started, fill in the text box."),
              p("If you're in 'Classic' mode, click the button.
-                For 'Instant' mode, a word should appear by itself."),
+                In 'Instant' mode, a word should appear by itself."),
 
              helpText("Select language ",em("English (US)"), ",
                   if you are one of my
@@ -77,7 +77,6 @@ shinyUI(fluidPage(
            selectInput("lang",
                        label = "Which language should we use?",
                        choices = list("English (US)" = "en_us",
-                                      "Valley Girl (Calif.)" = "valley",
                                       "Librarian (Discworld)" = "ook",
                                       "Hodor (Westeros)" = "hodor"),
                        selected = "en_us"),

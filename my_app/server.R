@@ -1,13 +1,11 @@
 # server.R
 
-load("data/start.RData", envir=.GlobalEnv)
+load("data/ngrams_and_profanities_10.RData", envir=.GlobalEnv)
 source("nextword.R")
 
 nextw <- function(phrase, lang, safemode) {
   if (lang == "en_us") {
     return(StupidBackoff(phrase, removeProfanity=safemode))
-  } else if (lang == "valley") {
-    return("like")
   } else if (lang == "ook") {
     return("ook")
   } else if (lang == "hodor") {
