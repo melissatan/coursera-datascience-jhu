@@ -1,6 +1,6 @@
 # server.R
 
-load("data/ngrams_and_profanities_10.RData", envir=.GlobalEnv)
+load("data/ngrams_and_profanities.RData", envir=.GlobalEnv)
 source("nextword.R")
 
 nextw <- function(phrase, lang, safemode) {
