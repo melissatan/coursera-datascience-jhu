@@ -1,6 +1,6 @@
 # dscapstone
 
-# coursera data science specialization capstone project
+# Data science project to create a next-word prediction app
 
 The project is to create a Shiny app that predicts the next word based on a user-input phrase.
 
