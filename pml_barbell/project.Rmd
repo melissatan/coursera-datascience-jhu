@@ -1,0 +1,151 @@
+---
+title: "Predicting how a barbell was lifted"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document:
+    highlight: tango
+---
+```{r setoptions, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(knitr)
+opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE)
+library(caret)
+library(rattle)
+library(randomForest)
+```
+
+Melissa Tan, Feb 2015, for Coursera predmachlearn-011. Word count: 1547.
+
+## Executive summary
+
+A random forest model was built to predict the way in which a barbell is lifted. In the dataset, 6 people performed barbell lifts correctly and incorrectly, in 5 different ways. Data from accelerometers on their belt, arm, dumbbell, and forearm are used to predict which way they did the exercise.
+
+## Reading in and cleaning data
+
+```{r readin}
+if (!file.exists("../training.csv")) {
+  trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(trainUrl, destfile = "../training.csv")
+  }
+if (!file.exists("../testing.csv")) {
+  testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(testUrl, destfile = "../testing.csv")
+  }
+training <- read.csv("training.csv", header=TRUE, stringsAsFactors=FALSE, 
+                     na.strings=c("", "NA"))  # make blank cells NA
+testing <- read.csv("testing.csv", header=TRUE, stringsAsFactors=FALSE, 
+                    na.strings=c("", "NA"))  # make blank cells NA
+```
+
+Training set is `r nrow(training)` rows by `r ncol(training)` cols, testing set is `r nrow(testing)` rows by `r ncol(testing)` cols.
+
+The 5 ways of barbell lifting are stored in the `training$classe` column as __A, B, C, D, E__. ([source](http://groupware.les.inf.puc-rio.br/har)) 
+
+* A: correct way to lift barbell
+* B: mistake - throwing the elbows to the front
+* C: mistake - lifting the dumbbell only halfway
+* D: mistake - lowering the dumbbell only halfway 
+* E: mistake - throwing the hips to the fron
+
+There are many columns with NAs.
+
+```{r str}
+str(training, list.len=30)  # don't need to show too many
+```
+
+Clean up `training` by removing the first 7 columns, since they contain data we don't need. Remove all columns in `training` that contain any NAs. Finally, convert `$classe` to factor.
+
+```{r clean}
+training <- training[, -c(1:7)]  # remove first 7 cols
+keepCols <- colnames(training)[colSums(is.na(training)) == 0]  # keep only cols wth zero NAs
+training <- training[, names(training) %in% keepCols]
+training$classe <- factor(training$classe)
+```
+
+After cleaning, training set is `r nrow(training)` rows by `r ncol(training)` cols.
+
+## Build prediction model
+
+Split `training` data into `traindf` and `testdf` subsets. We build the model on `traindf` and check its accuracy on `testdf`.
+
+```{r split}
+set.seed(0)  # for reproducibility
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+traindf <- training[inTrain, ]
+testdf <- training[-inTrain, ]
+```
+
+Subset dimensions: train subset is `r nrow(traindf)` rows by `r ncol(traindf)` cols, test subset is `r nrow(testdf)` rows by `r ncol(testdf)` cols.
+
+Since there is no immediately obvious linear relationship, we opt for a non-linear approach. Skip principal components analysis which is more suited for linear models.
+ 
+### Build classification tree
+
+```{r tree}
+modfit.tree <- train(classe ~ ., data=traindf, method="rpart")
+fancyRpartPlot(modfit.tree$finalModel, sub="")  # remove subtitle
+confusionMatrix(testdf$classe, predict(modfit.tree, testdf))
+```
+
+However, accuracy of this tree is quite low. The next model tested, random forest, does much better.
+
+### Build random forest
+
+```{r rf}
+modfit <- randomForest(classe ~ ., data=traindf, ntree=100, importance=TRUE)
+modfit
+plot(modfit, main="Error vs. number of trees grown", cex=0.7)
+```
+
+The plot shows that error rate levels out at around 80 trees, so `ntree=100` appears fairly reasonable. The out-of-bag estimate of error rate is also low, at <1%.
+
+The randomForest algorithm can display the most important variables. There are 2 ways of measuring variable importance: mean decrease in accuracy and mean decrease in Gini index. 
+
+```{r varimp, echo=FALSE}
+varImpPlot(modfit, main="30 most important variables", cex=0.7)
+```
+
+### Apply model to testing data
+
+Predict `$classe` for `testdf` and check against true values.
+
+```{r pred}
+confusionMatrix(testdf$classe, predict(modfit, testdf))
+```
+
+Accuracy is high, at nearly 100%.
+
+## Cross-validation and estimating out-of-sample error
+
+Use `rfcv()` function from `library(randomForest)` for k-folds cross validation. It sequentially reduces the number of predictors, by a step multiplier (<1), and computes the cross-validation out-of-sample error each round.
+
+```{r cv}
+## get the most important predictors by mean decrease in accuracy.
+vimp <- importance(modfit)  # evaluates variable importance
+vimp <- as.data.frame(vimp[, -(1:5)])  # remove unneeded cols
+vimp <- vimp[order(vimp$MeanDecreaseAccuracy, decreasing=TRUE), ]  # most to least impt
+mostimp <- head(rownames(vimp), 20)  # choose the 20 most important predictors
+## feed the predictors into rfcv.
+traindf.trim <- traindf[, names(traindf) %in% mostimp]
+modfit.cv <- rfcv(trainx=traindf.trim,    # predictor variables
+                  trainy=traindf$classe,  # outcome variable
+                  step = 0.8,             # reduction multiplier
+                  cv.fold=5)              # number of k-folds
+modfit.cv$error.cv
+```
+
+The top row of the output represents the number of predictors used. The bottom row represents the cross-validation out-of-sample error for that number of predictors. The out-of-sample error rate is <5% once there are 5-7 (or more) predictors. If we want to rebuild the model to make it faster, it'd be enough to use about 10 predictors, since the error levels off at about 1% in that region. 
+
+## Final answers
+
+Predict `$classe` for the actual `testing` data.
+
+```{r answers}
+pred.test <- predict(modfit, testing)
+answers <- as.matrix(pred.test)
+answers
+```
+
+Prediction accuracy: 20/20 according to auto-grading.
+
+#### end
