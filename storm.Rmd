@@ -1,0 +1,447 @@
+---
+title: "Repdata-007 peer assessment 2 - NOAA storm data"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+## Title: Which storm types cause the most health and economic damage?
+Done by: Melissa Tan, October 2014
+
+```{r setoptions, echo=FALSE}
+library(knitr)
+opts_chunk$set(echo=TRUE)
+```
+
+## 1. Synopsis
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. In this study, we explore the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. We recategorize the event types into the 48 standard ones given by NOAA. We find that tornadoes cause the most health damage, in terms of deaths and injuries, while floods cause the most economic damage to property and crops combined.
+
+#### Objective
+
+We aim to answer these questions:
+
+1. Across the United States, which types of severe weather events are most harmful with respect to population health?
+
+2. Across the United States, which types of severe weather events have the greatest economic consequences?
+
+#### Background
+We analyze the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+#### About the data
+ The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+#### Downloading the data
+
+Download the data from [this link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2). It comes in the form of a CSV file zipped as a `.bz2` file. As it turns out, `read.csv()` is just a wrapper of `read.table()` which can directly read data saved in `.bz2` format. (Alternatively, if we wanted to, we could unzip the CSV with `bzfile()` then read it in.) We read in the CSV directly into dataframe `df`. 
+
+```{r initialview, cache=TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+# save file in parent directory for convenience
+fname <- "../StormData.csv.bz2"
+if(!file.exists(fname)) {
+    download.file(url, fname)
+}
+# initially read in only top part, to get sense of data
+header <- read.csv(fname, nrows=1)
+names(header)
+```
+
+There are _37_ columns. Since this is a big file, we only read in specific columns:
+
+* col 8: `$EVTYPE`
+* col 23-24: `$FATALITIES`, `$INJURIES`
+* col 25-28: `$PROPDMG`, `$PROPDMGEXP`, `$CROPDMG`, `$CROPDMGEXP`
+
+```{r readdata, cache=TRUE}
+# identify the cols we want, with NA. for the rest, we put NULL
+myCols <- c(rep("NULL",7),
+            NA, #col 8
+            rep("NULL",14),
+            rep(NA, 6), #cols 23-28
+            rep("NULL",9))
+# read in only desired cols. this should take about 4 min or so.
+df <- read.csv(fname, colClasses = myCols, stringsAsFactors=FALSE)
+```
+
+Data has now been loaded into dataframe `df`.
+
+--------
+
+## 2. Data Processing
+
+Before we plot anything we need to clean up the event type data and the damage data.
+
+#### Libraries required for analysis
+
+```{r results="hide", message=FALSE}
+# Set message=FALSE to suppress the package loading messages.
+require(dplyr)
+require(reshape2)
+require(ggplot2)
+```
+
+#### Preliminary inspection
+
+Let's take a look at what the data set contains. Change the column `$EVTYPE`, representing weather event type, to Factor.
+
+```{r}
+str(df)
+df$EVTYPE <- as.factor(df$EVTYPE)
+```
+
+The type of storm is represented in the column `$EVTYPE`, which we note has initially _985_ factor levels. 
+
+For damage to population health, we can look at the `$FATALITIES` and `$INJURIES` columns.
+
+For economic damage, we can look at `$PROPDMG` combined with `$PROPDMGEXP`, as well as `$CROPDMG` combined with `$CROPDMGEXP`.
+
+We can quickly see that the `$EVTYPE` column has a few problems.
+
+```{r}
+head(levels(df$EVTYPE))
+tail(levels(df$EVTYPE))
+```
+
+These issues include:
+
+* Content:
+    * Not all the factor levels are actually weather events.
+* Names:
+    * Some have leading or trailing whitespaces;
+    * Not all are in uppercase;
+    * Different names for the same thing (see [timeline](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype));
+    * Some contain typos.
+
+#### Cleaning up $EVTYPE factor levels
+
+Convert everything to uppercase, and trim off whitespace. N.B. I tried setting `strip.white=TRUE` in `read.csv()` but the whitespaces in the factor levels remained, so we will need to do it manually.
+
+```{r trim, cache=TRUE}
+# function to trim off leading and trailing whitespace in string x
+trim <- function (x) {
+    gsub("^\\s+|\\s+$", "", x)
+}
+# trim each of the 985 factor levels
+levels(df$EVTYPE) <- trim(levels(df$EVTYPE)) #reduces to 977 levels
+
+# convert each level to uppercase
+levels(df$EVTYPE) <- toupper(levels(df$EVTYPE)) #reduces to 890 levels
+```
+
+From the NOAA's official documentation ([pdf, see item 7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) the event types have now been standardized into 48 main ones. 
+
+We will try to put each historical event type into one of the 48 buckets, and keep track of that grouping in a new column, `$EventType`. For those events that don't fit any bucket, we will leave the value as `NA`.
+
+```{r}
+# create new col, initialise with NA for clarity
+df$EventType <- rep(NA,nrow(df))
+```
+
+I visually went over the factor levels given in `levels(df$EVTYPE)`to come up with the following regex searches for `grep`.
+
+These searches are intended to place each event type in the appropriate bucket. Most of my choices are based on keywords and are mostly self-explanatory. For others, I had to do some research, e.g. I found out that "downbursts" are a type of thunderstorm wind.
+
+Each of the 48 lists below corresponds to one of the 48 main event types given by NOAA. Each list contains regex strings for the values in `$EVTYPE`. The types are listed in alphabetical order.
+
+```{r eventlist, cache=TRUE}
+astrolowtide <- c("low tide","blow-out")
+avalanche <- c("avalanch?e")
+
+blizzard <- c("blizzard","blowing snow")
+
+coastalflood <- c("coastal","beach","erosin", "erosion")
+coldwindchill <-c("cold","wind chill","cool","hypothermia","low temperature$","unseasona.+? co.+?","unusually cold","low temp")
+
+debrisflow <- c("debris flow","land","mud","slide")
+densefog <-c("fog$","^fog")
+densesmoke <- c("smoke")
+drought <- c("drought","below normal prec.+?","driest","dry","low rainfall")
+dustdevil <- c("dust devil","dust devel")
+duststorm <- c("dust storm","blowing dust","duststorm","saharan dust")
+
+extraheat <- c("excessive heat", "abnormal warmth","extreme heat","high temperature record","record high", "record heat")
+extracoldwindchill <- c("extreme cold", "extreme wind chill","bitter wind chill","excessive cold","extended cold","record .*?co.+?","extreme windchill","low temperature record","prolong cold","severe cold", "record low")
+
+flashflood <- c("flash")
+flood <- c("abnormally wet", "^flood","dam break","dam failure","drowning","flood$","flooding?","rapidly rising water", "fld", "floyd")
+freezingfog <- "freezing fog"
+frostfreeze <- c("frost","freeze","^freezing [rds]")
+funnelcloud <- c("funnel","wall")
+
+hail <- "hail"
+heat <- c("^heat","hot","hyperthermia","warm.*?")
+heavyrain <- c("rain","heavy prec.+?","heavy shower.+?","torrential","rainstorm","record rainfall","excessive wetness","wet", "excessive precipitation","record precipitation")
+heavysnow <- c("heavy .*?snow")
+highsurf <- c("surf","astronomical high tide","heavy swells","high .*?swells", "high seas", "high tides","high water")
+highwind <- c("high .*?winds?") #worse than strongwind
+hurricanetyphoon <- c("hurricane","typhoon")
+
+icestorm <- c("ice storm","glaze")
+
+lakeflood <- c("lakeshore flood", "lake flood")
+lakesnow <- c("lake-?effect","heavy lake snow")
+lightning <- c("lightn?ing","ligntning")
+
+marinehail <- "marine hail"
+marinehighwind <- c("marine high wind", "high waves","heavy seas?","wind and wave")
+marinestrongwind <- c("marine strong wind","rough seas","rough surf")
+marinestormwind <- c("marine thunderstorm wind","marine tstm wind")
+
+ripcurrent <- "rip currents?"
+
+seiche <- "seiche"
+sleet <- c("sleet","light freezing rain")
+stormtide <- c("storm tide","gusty","storm surge")
+strongwind <- c("^wind","wnd","strong wind","gradient","non tstm wind","storm force winds","wind damage")
+
+thunderstormwind <- c("^tstm", "th?und?", "thun?dee?r?e?s?torms? .*?wind?s?s?", "downburst","microburst","mir?coburst","heatburst","severe thunderstorms?","thunderstormw.*?", "wind storm")
+tornado <- c("tornado","gustnado","rotating wall cloud","torndao","whirlwind")
+tropicaldepression <- "tropical depression"
+tropicalstorm <- "tropical storm"
+tsunami <- "tsunami"
+
+volcanicash <- "volcanic"
+
+waterspout <- "spout"
+wildfire <- "fire"
+winterstorm <- c("winter storm","thundersnow")
+winterweather <- c("^wintery?","snow","ice","icy",".^*?snow.*?$","wintry")
+```
+
+Now, carry out 48 `grep`s -- one for each event group -- on `df$EVTYPE`, with `ignore.case=TRUE` for convenience so that I don't have to leave capslock on. 
+
+We make this arduous process marginally easier by writing a helper function called `renameEv()`, which takes as its arguments one of the 48 lists above and the corresponding weather event name given by NOAA. The function fills in the event name to the appropriate rows in the new column, `$EventType`.
+
+```{r renamefn, cache=TRUE}
+# function to grep through $EVTYPE for given match string, then fill in $EVGROUP appropriately
+renameEv <- function(eventlist, eventname) {
+    hits <- grep(paste(eventlist,collapse="|"), df$EVTYPE, ignore.case=TRUE)
+    df$EventType[hits] <<- eventname
+}
+```
+
+One by one, we call the `renameEv()` function defined above, for each of the 48 groups identified.
+
+```{r renaming, cache=TRUE}
+
+# Some greps are broader than others, so handle them first
+renameEv(heat, "Heat")
+renameEv(coldwindchill,"Cold/Wind Chill")
+renameEv(winterweather, "Winter Weather")
+renameEv(flood,"Flood")
+renameEv(hail, "Hail")
+renameEv(frostfreeze, "Frost/Freeze")
+renameEv(strongwind, "Strong Wind")
+renameEv(thunderstormwind, "Thunderstorm Wind")
+renameEv(heavyrain, "Heavy Rain")
+
+# Narrower greps follow
+renameEv(astrolowtide, "Astronomical Low Tide")
+renameEv(avalanche,"Avalanche")
+renameEv(blizzard,"Blizzard")
+renameEv(coastalflood,"Coastal Flood")
+renameEv(debrisflow,"Debris Flow")
+renameEv(densefog, "Dense Fog")
+renameEv(densesmoke, "Dense Smoke")
+renameEv(drought, "Drought")
+renameEv(dustdevil, "Dust Devil")
+renameEv(duststorm, "Dust Storm")
+renameEv(extraheat, "Excessive Heat")
+renameEv(extracoldwindchill, "Extreme Cold/Wind Chill")
+renameEv(flashflood, "Flash Flood")
+renameEv(freezingfog, "Freezing Fog")
+renameEv(funnelcloud, "Funnel Cloud")
+renameEv(heavysnow, "Heavy Snow") 
+renameEv(highsurf, "High Surf")
+renameEv(highwind, "High Wind")
+renameEv(hurricanetyphoon, "Hurricane/Typhoon")
+renameEv(icestorm, "Ice Storm")
+renameEv(lakeflood, "Lakeshore Flood")
+renameEv(lakesnow, "Lake-effect Snow")
+renameEv(lightning, "Lightning")
+renameEv(marinehail, "Marine Hail")
+renameEv(marinehighwind, "Marine High Wind")
+renameEv(marinestrongwind, "Marine Strong Wind")
+renameEv(marinestormwind, "Marine Thunderstorm Wind")
+renameEv(ripcurrent, "Rip Current")
+renameEv(seiche, "Seiche")
+renameEv(sleet, "Sleet")
+renameEv(stormtide, "Storm Tide")
+renameEv(tornado, "Tornado")
+renameEv(tropicaldepression, "Tropical Depression")
+renameEv(tropicalstorm, "Tropical Storm")
+renameEv(tsunami, "Tsunami")
+renameEv(volcanicash, "Volcanic Ash")
+renameEv(waterspout, "Waterspout")
+renameEv(wildfire, "Wildfire")
+renameEv(winterstorm, "Winter Storm")
+```
+
+Check how many event types we managed to re-categorize successfully.
+
+```{r uncateg, cache=TRUE}
+uncategorized <- subset(df, is.na(df$EventType))
+# Compute percentage of events we did not manage to categorize:
+nrow(uncategorized)/nrow(df)
+```
+
+Now that most of the event types have been put into one of 48 buckets, we retain only the categorized events.
+
+```{r}
+df <- subset(df, !is.na(df$EventType))
+```
+
+Last, convert the character column into a factor column.
+
+```{r}
+df$EventType <- as.factor(df$EventType)
+```
+
+#### Computing property and crop damage estimates
+
+Economic consequences can be measured by property damage and crop damage, which are in the dataset. 
+
+We know from the official documentation ([pdf, see item 2.7](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf)) that the total property damage is the `$PROPDMG` value times the multiplier specified in`$PROPDMGEXP`, and similarly for crop damage. We are told that "K" refers to thousands, "M" millions and "B" billions.
+
+However, we need to clean up `$PROPDMGEXP` and `$CROPDMGEXP` before we can use them. This will require us to make certain assumptions to proceed.
+
+```{r}
+head(df$PROPDMGEXP)
+head(df$CROPDMGEXP)
+```
+
+For the purposes of this analysis, I shall assume that numerical values in the `DMGEXP` columns refer to exponents of 10, e.g. "2" would denote "10^2". For convenience, I assume that null, "+", "?", and "-" indicate "0". I assume "h" refers to hundreds, "k" to thousands, "m" to millions and "b" to billions. Translate the values accordingly.
+
+```{r}
+zeroes <- c("","-","?","+")
+hundred <- c("h","H")
+thousand <- c("k","K")
+million <- c("m","M")
+billion <- c("b","B")
+
+# helper function to translate to number
+translate <- function(abbrev, num) {
+    df$PROPDMGEXP[df$PROPDMGEXP %in% abbrev] <<- num
+    df$CROPDMGEXP[df$CROPDMGEXP %in% abbrev] <<- num
+}
+
+translate(zeroes, 0)
+translate(hundred, 2)
+translate(thousand, 3)
+translate(million, 6)
+translate(billion, 9)
+```
+
+After renaming the factor levels, we can compute the total damage estimates to property and crops. For this we use `mutate()` from `library(dplyr)`.
+
+```{r}
+# convert $PROPDMGEXP to numeric 
+df$PROPDMGEXP <- as.numeric(df$PROPDMGEXP)
+df$CROPDMGEXP <- as.numeric(df$CROPDMGEXP)
+
+# add new cols where we compute total damage
+df <- mutate(df, PropertyDamage = PROPDMG*10^PROPDMGEXP,
+                 CropDamage = CROPDMG*10^CROPDMGEXP)
+```
+
+We can further `summarize()` the data, such that fatalities, injuries, property damage and crop damage are all grouped by their event type. 
+
+```{r}
+plotdf <- df %>% group_by(EventType) %>% 
+            summarize(totalDeaths = sum(FATALITIES),
+                      totalInjuries = sum(INJURIES),
+                      totalPropertyDamage = sum(PropertyDamage),
+                      totalCropDamage = sum(CropDamage))
+```
+
+We can now get rid of the columns that we do not need anymore, using `select()` from `library(dplyr)`.
+
+```{r}
+plotdf <- select(plotdf, EventType, totalDeaths, totalInjuries, totalPropertyDamage, totalCropDamage)
+head(plotdf)
+```
+
+--------
+
+## 3. Results
+
+#### Q1. Which weather event is worst for health?
+
+Answer: __Tornadoes__ are the worst for health, both in terms of fatalities and injuries.
+
+To examine the health consequences of weather events, we make a stacked bar plot of total deaths and total injuries.
+The data needs to be melted into narrow form for `library(ggplot2)` to handle. We use `library(reshape2)` to `melt()` the data from wide to narrow.
+
+```{r health}
+health <- select(plotdf, EventType, totalDeaths, totalInjuries)
+health_m <- melt(health, id.var="EventType")
+g1 <- ggplot(health_m, aes(x=EventType, y=value, fill=variable))
+# make stacked bar plot:
+g1 <- g1 + geom_bar(stat = "identity")
+# axis labels:
+g1 <- g1 + labs(x="Weather event", y="Health damage", title="Deaths and injuries from weather events")
+# adjust x-axis labels so that the event types are visible:
+g1 <- g1 + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+g1
+```
+
+_Fig 1: Total deaths and injuries per type of weather event_
+
+#### Q2. Which weather event has the worst economic consequences?
+
+Answer: __Floods__, for property and crop damage combined. They also cause the most property damage. However, we see that drought causes the most crop damage.
+
+To examine the economic consequences, we again use a stacked bar plot in a process similar to the one above.
+
+```{r econ}
+econ <- select(plotdf, EventType, totalPropertyDamage, totalCropDamage)
+econ_m <- melt(econ, id.var="EventType")
+g2 <- ggplot(econ_m, aes(x=EventType, y=value, fill=variable))
+# make stacked bar plot:
+g2 <- g2 + geom_bar(stat = "identity")
+# axis labels:
+g2 <- g2 + labs(x="Weather event", y="Economic damage ($ estimate)", title="Property and crop damage from weather events")
+# adjust x-axis labels so that the event types are visible:
+g2 <- g2 + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+g2
+```
+
+_Fig 2: Total property and crop damage, in monetary estimates, per type of weather event_
+
+--------
+
+## 4. Conclusion
+
+Tornadoes cause the most health damage, in terms of deaths and injuries. Floods cause the most economic damage to property and crops combined.
+
+--------
+### Supplementary notes
+
+Software environment in which the analysis was conducted:
+
+* R version 3.1.1
+* RStudio version 0.98.1073
+* OS: Windows 7, 32-bit
+* Packages loaded (non-base packages):
+    * dplyr_0.2
+    * ggplot2_1.0.0 
+    * ggthemes_1.7.0 
+    * lubridate_1.3.3
+* The above packages depended on:
+    * assertthat_0.1   
+    * colorspace_1.2-4
+    * digest_0.6.4     
+    * grid_3.1.1      
+    * gtable_0.1.2     
+    * MASS_7.3-33     
+    * memoise_0.2.1    
+    * munsell_0.4.2   
+    * parallel_3.1.1   
+    * plyr_1.8.1      
+    * proto_0.3-10    
+    * Rcpp_0.11.2     
+    * reshape2_1.4    
+    * scales_0.2.4    
+    * stringr_0.6.2   
+    * tools_3.1.1  
