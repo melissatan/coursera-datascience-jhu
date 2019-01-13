@@ -1,0 +1,78 @@
+Predicting your height (like it's 1885)
+========================================================
+author: Melissa Tan
+date: Jan 2015
+font-import: http://fonts.googleapis.com/css?family=Roboto+Slab
+font-family: 'Roboto-Slab','Roboto'
+transition: rotate
+css: custom.css
+
+How tall were you meant to be?
+========================================================
+You might be a half-man,
+![Tyrion Lannister, Game of Thrones](img/tyrion.jpg)
+
+Or neither. (Lucky you!)
+***
+or a hulk.
+![Surely this guy needs no introduction](img/hulk.jpg)
+
+Either way, wouldn't you be curious?
+========================================================
+
+I wanted to know how my parents' heights translated to mine, so I made this Shiny app: [http://melissatan.shinyapps.io/ddp-shiny](http://melissatan.shinyapps.io/ddp-shiny).
+
+The app takes in your input:
+
+* How tall your parent (either mother or father) is
+* Your gender
+
+And produces its estimate of how tall you are likely to be.
+
+It also plots your estimated height against actual parent-child height data, so you'll know how you stack up.
+
+How does it do that?
+========================================================
+
+The app uses data collected by Galton, who took the heights of 928 children and their 205 parents in 1885. I've converted it from inches to centimeters. Galton converted female heights to male heights by multiplying them with _1.08_, which I will follow.
+
+
+```r
+library(UsingR); data(galton)
+galton.m <- galton * 2.54 # inch to cm multiplier
+head(galton.m)
+```
+
+```
+    child parent
+1 156.718 179.07
+2 156.718 173.99
+3 156.718 166.37
+4 156.718 163.83
+5 156.718 162.56
+6 157.988 171.45
+```
+
+I fit a linear model on the data to estimate a child's height based on the parent's.
+
+
+
+Example: predict son's height, given 160cm-tall mother
+========================================================
+
+
+```r
+input.height <- 160 # parent height
+input.parent <- "mother" # parent gender
+input.gender = "male" # child gender
+multiplier <- 1; divisor <- 1
+if (input.parent == "mother") { multiplier <- 1.08 }
+if (input.gender == "female") { divisor <- 1.08}
+result <- predict(fit, newdata=data.frame(parent=input.height*multiplier))
+result/divisor # convert for child gender
+```
+
+```
+       1 
+172.4905 
+```
